@@ -13,19 +13,19 @@
           <label class="form-label">
             原密码
           </label>
-          <input v-model="oldpass" type="password" class="form-control">
+          <input v-model="oldpass" type="password" class="form-control" autocomplete="off">
         </div>
         <div class="form-group">
           <label class="form-label">
             新密码
           </label>
-          <input v-model="newpass1" type="password" class="form-control">
+          <input v-model="newpass1" type="password" class="form-control" autocomplete="off">
         </div>
         <div class="form-group">
           <label class="form-label">
             再次输入新密码
           </label>
-          <input v-model="newpass2" type="password" class="form-control">
+          <input v-model="newpass2" type="password" class="form-control" autocomplete="off">
         </div>
       </div>
       <div class="card-footer text-right">
@@ -40,7 +40,8 @@
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">
-          TOKEN 管理
+          TOKEN 管理 
+          <a href="https://rasp.baidu.com/doc/hacking/cloud-api.html#panel-api-description" target="_blank" style="color: #467fcf">[帮助文档]</a>
         </h3>
       </div>
       <div class="card-body">
@@ -119,7 +120,8 @@ export default {
           old_password: this.oldpass,
           new_password: this.newpass1
         }, function(data) {
-          alert('密码修改成功')
+          alert('密码修改成功，点击确认重新登录')
+          location.href = '/#/login'
         })
       } else {
         alert('两次密码输入不一致，请重新输入')

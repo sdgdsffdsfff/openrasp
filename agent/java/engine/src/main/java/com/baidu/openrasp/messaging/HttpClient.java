@@ -36,9 +36,9 @@ public class HttpClient {
 
     /**
      * 用于post推送報警的http client
-     *
      */
-    public HttpClient() {}
+    public HttpClient() {
+    }
 
     protected void request(String requestUrl, String attackInfoJson, int connectionTimeout, int readTimeout) {
         HttpURLConnection httpURLConnection = null;
@@ -65,10 +65,10 @@ public class HttpClient {
                 System.out.println("[OpenRASP] Unexpected HTTP status code " + responseCode + " while posting attack event logs to " + requestUrl);
             }
         } catch (MalformedURLException me) {
-            System.out.println("[OpenRASP] Bad URL exception: " + me.getMessage());
+            System.out.println("[OpenRASP] Bad URL exceptions: " + me.getMessage());
             me.printStackTrace();
         } catch (Exception e) {
-            System.out.println("[OpenRASP] Request exception: " + e.getMessage());
+            System.out.println("[OpenRASP] Request exceptions: " + e.getMessage());
             e.printStackTrace();
         } finally {
             if (httpURLConnection != null) {

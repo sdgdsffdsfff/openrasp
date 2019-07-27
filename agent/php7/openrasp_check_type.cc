@@ -15,6 +15,7 @@
  */
 
 #include "openrasp_check_type.h"
+#include <algorithm>
 
 void CheckTypeTransfer::insert(OpenRASPCheckType type, const std::string &name, bool is_buildin)
 {
@@ -39,13 +40,17 @@ CheckTypeTransfer::CheckTypeTransfer()
   insert(INCLUDE, "include");
   insert(DB_CONNECTION, "dbConnection");
   insert(SQL, "sql");
-  insert(SQL_SLOW_QUERY, "sqlSlowQuery");
   insert(SQL_PREPARED, "sqlPrepared");
   insert(SSRF, "ssrf");
   insert(WEBSHELL_EVAL, "webshell_eval", true);
   insert(WEBSHELL_COMMAND, "webshell_command", true);
   insert(WEBSHELL_FILE_PUT_CONTENTS, "webshell_file_put_contents", true);
   insert(XSS_ECHO, "xss_echo", true);
+  insert(XSS_USER_INPUT, "xss_userinput", true);
+  insert(SQL_ERROR, "sql_exception", true);
+  insert(WEBSHELL_LD_PRELOAD, "webshell_ld_preload", true);
+  insert(REQUEST, "request");
+  insert(REQUEST_END, "requestEnd");
 }
 
 std::string CheckTypeTransfer::type_to_name(OpenRASPCheckType type) const
@@ -74,16 +79,6 @@ OpenRASPCheckType CheckTypeTransfer::name_to_type(const std::string &name) const
   }
 }
 
-std::vector<std::string> CheckTypeTransfer::get_all_names() const
-{
-  std::vector<std::string> names;
-  for (auto &item : name_to_check_type)
-  {
-    names.push_back(item.first);
-  }
-  return names;
-}
-
 std::map<std::string, std::string> CheckTypeTransfer::get_buildin_action_map() const
 {
   std::map<std::string, std::string> buildin_action_map;
@@ -92,6 +87,15 @@ std::map<std::string, std::string> CheckTypeTransfer::get_buildin_action_map() c
     buildin_action_map.insert({type_to_name(buildin_type), ""});
   }
   return buildin_action_map;
+}
+
+bool CheckTypeTransfer::is_buildin_check_type(OpenRASPCheckType type) const
+{
+  if (std::find(buildin_check_type.begin(), buildin_check_type.end(), type) != buildin_check_type.end())
+  {
+    return true;
+  }
+  return false;
 }
 
 std::unique_ptr<CheckTypeTransfer> check_type_transfer(new CheckTypeTransfer());

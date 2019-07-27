@@ -30,6 +30,7 @@ class BackendResponse;
 
 class BackendRequest
 {
+
 private:
   CURL *curl = nullptr;
   CURLcode curl_code;
@@ -41,6 +42,7 @@ public:
   virtual ~BackendRequest();
   std::shared_ptr<BackendResponse> curl_perform();
   CURLcode get_curl_code() const;
+  const char *get_curl_err_msg() const;
 };
 
 } // namespace openrasp

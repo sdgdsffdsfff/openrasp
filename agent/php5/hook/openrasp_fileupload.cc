@@ -35,12 +35,21 @@ void pre_global_move_uploaded_file_FILE_UPLOAD(OPENRASP_INTERNAL_FUNCTION_PARAME
         (PG(http_globals)[TRACK_VARS_FILES] || zend_is_auto_global(ZEND_STRL("_FILES") TSRMLS_CC)))
     {
         zval **realname = nullptr;
+        std::string form_data_name;
         HashTable *ht = Z_ARRVAL_P(PG(http_globals)[TRACK_VARS_FILES]);
         for (zend_hash_internal_pointer_reset(ht);
              zend_hash_has_more_elements(ht) == SUCCESS;
              zend_hash_move_forward(ht))
         {
+            char *key;
+            ulong idx;
+            int type;
             zval **file, **tmp_name;
+            type = zend_hash_get_current_key(ht, &key, &idx, 0);
+            if (type == HASH_KEY_NON_EXISTENT)
+            {
+                continue;
+            }
             if (zend_hash_get_current_data(ht, (void **)&file) != SUCCESS ||
                 Z_TYPE_PP(file) != IS_ARRAY ||
                 zend_hash_find(Z_ARRVAL_PP(file), ZEND_STRS("tmp_name"), (void **)&tmp_name) != SUCCESS ||
@@ -51,6 +60,15 @@ void pre_global_move_uploaded_file_FILE_UPLOAD(OPENRASP_INTERNAL_FUNCTION_PARAME
             }
             if (zend_hash_find(Z_ARRVAL_PP(file), ZEND_STRS("name"), (void **)&realname) == SUCCESS)
             {
+                if (type == HASH_KEY_IS_STRING)
+                {
+                    form_data_name = std::string(key);
+                }
+                else if (type == HASH_KEY_IS_LONG)
+                {
+                    long actual = idx;
+                    form_data_name = std::to_string(actual);
+                }
                 break;
             }
         }
@@ -66,22 +84,19 @@ void pre_global_move_uploaded_file_FILE_UPLOAD(OPENRASP_INTERNAL_FUNCTION_PARAME
             php_stream_close(stream);
             if (len > 0)
             {
+                openrasp::CheckResult check_result = openrasp::CheckResult::kCache;
                 openrasp::Isolate *isolate = OPENRASP_V8_G(isolate);
-                if (!isolate)
-                {
-                    efree(contents);
-                    return;
-                }
-                bool is_block = false;
+                if (isolate)
                 {
                     v8::HandleScope handle_scope(isolate);
                     auto params = v8::Object::New(isolate);
+                    params->Set(openrasp::NewV8String(isolate, "name"), openrasp::NewV8String(isolate, form_data_name));
                     params->Set(openrasp::NewV8String(isolate, "filename"), openrasp::NewV8String(isolate, Z_STRVAL_PP(realname), Z_STRLEN_PP(realname)));
                     params->Set(openrasp::NewV8String(isolate, "content"), openrasp::NewV8String(isolate, contents, MIN(len, 4 * 1024)));
-                    efree(contents);
-                    is_block = isolate->Check(openrasp::NewV8String(isolate, get_check_type_name(check_type)), params, OPENRASP_CONFIG(plugin.timeout.millis));
+                    check_result = Check(isolate, openrasp::NewV8String(isolate, get_check_type_name(check_type)), params, OPENRASP_CONFIG(plugin.timeout.millis));
                 }
-                if (is_block)
+                efree(contents);
+                if (check_result == openrasp::CheckResult::kBlock)
                 {
                     handle_block(TSRMLS_C);
                 }

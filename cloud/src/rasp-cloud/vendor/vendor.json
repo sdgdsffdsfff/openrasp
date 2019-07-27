@@ -39,10 +39,10 @@
 			"revisionTime": "2018-11-19T06:40:43Z"
 		},
 		{
-			"checksumSHA1": "yIkYzW7bzAD81zHyuCNmEj4+oxQ=",
-			"path": "github.com/gopherjs/gopherjs/js",
-			"revision": "d547d1d9531ed93dbdebcbff7f83e7c876a1e0ee",
-			"revisionTime": "2018-11-03T18:53:06Z"
+			"checksumSHA1": "HSoVXzX8jWK/yHnhCoKnjlFJ71w=",
+			"path": "github.com/bouk/monkey",
+			"revision": "e8ac0cba3b42082cac2c6549eaa3c60f18373c76",
+			"revisionTime": "2018-09-14T09:56:44Z"
 		},
 		{
 			"checksumSHA1": "cIiyvAduLLFvu+tg1Qr5Jw3jeWo=",
@@ -131,6 +131,42 @@
 			"path": "github.com/robertkrimen/otto/token",
 			"revision": "15f95af6e78dcd2030d8195a138bd88d4f403546",
 			"revisionTime": "2018-06-17T13:11:54Z"
+		},
+		{
+			"checksumSHA1": "y685idTxBySLYWaeyUKpZs5hqck=",
+			"path": "github.com/smartystreets/assertions",
+			"revision": "b6c0e53d73045618965505ac26ff7864fe3ab2b2",
+			"revisionTime": "2019-01-16T19:17:33Z"
+		},
+		{
+			"checksumSHA1": "v6W3GIQMzr3QSXB2NtBa9X7SwiI=",
+			"path": "github.com/smartystreets/assertions/internal/go-render/render",
+			"revision": "b6c0e53d73045618965505ac26ff7864fe3ab2b2",
+			"revisionTime": "2019-01-16T19:17:33Z"
+		},
+		{
+			"checksumSHA1": "r6FauVdOTFnwYQgrKGFuWUbIAJE=",
+			"path": "github.com/smartystreets/assertions/internal/oglematchers",
+			"revision": "b6c0e53d73045618965505ac26ff7864fe3ab2b2",
+			"revisionTime": "2019-01-16T19:17:33Z"
+		},
+		{
+			"checksumSHA1": "c71WVAQlpp3r4I+BtTxRz1Cq1Lw=",
+			"path": "github.com/smartystreets/goconvey/convey",
+			"revision": "044398e4856c3a83fb98f9de0a8ed1c6495e2843",
+			"revisionTime": "2018-11-08T00:35:08Z"
+		},
+		{
+			"checksumSHA1": "6Mgn4H/4vpqYGlaIKZ0UwOmJN0E=",
+			"path": "github.com/smartystreets/goconvey/convey/gotest",
+			"revision": "044398e4856c3a83fb98f9de0a8ed1c6495e2843",
+			"revisionTime": "2018-11-08T00:35:08Z"
+		},
+		{
+			"checksumSHA1": "uTSA/KWQA01sKPYfmLyMPvXbYaA=",
+			"path": "github.com/smartystreets/goconvey/convey/reporting",
+			"revision": "044398e4856c3a83fb98f9de0a8ed1c6495e2843",
+			"revisionTime": "2018-11-08T00:35:08Z"
 		},
 		{
 			"path": "golang.org/x/crypto/acme/autocert",

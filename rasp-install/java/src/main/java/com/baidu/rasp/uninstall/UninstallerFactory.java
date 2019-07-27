@@ -26,16 +26,18 @@ import static com.baidu.rasp.RaspError.E10002;
 import static com.baidu.rasp.RaspError.E10004;
 
 /**
- * @Description:
  * @author anyang
+ * @Description:
  * @date 2018/4/25 19:38
- *
  */
 public abstract class UninstallerFactory {
 
     protected static final String TOMCAT = "Tomcat";
     protected static final String JBOSS = "JBoss 4-6";
     protected static final String RESIN = "Resin";
+    protected static final String WEBLOGIC = "Weblogic";
+    protected static final String JBOSSEAP = "JbossEAP";
+    protected static final String WILDFLY = "Wildfly";
 
     protected abstract Uninstaller getUninstaller(String serverName, String serverRoot);
 
@@ -49,6 +51,9 @@ public abstract class UninstallerFactory {
             System.out.println("List of currently supported servers are:");
             System.out.println("- " + TOMCAT);
             System.out.println("- " + RESIN);
+            System.out.println("- " + WEBLOGIC);
+            System.out.println("- " + JBOSSEAP);
+            System.out.println("- " + WILDFLY);
             System.out.println("- " + JBOSS + "\n");
             throw new RaspError(E10004 + serverRoot.getPath());
         }

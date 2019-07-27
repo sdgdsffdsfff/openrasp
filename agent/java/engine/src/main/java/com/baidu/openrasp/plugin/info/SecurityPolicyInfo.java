@@ -18,12 +18,11 @@ package com.baidu.openrasp.plugin.info;
 
 import com.baidu.openrasp.cloud.model.CloudCacheModel;
 import com.baidu.openrasp.config.Config;
-import com.baidu.openrasp.request.HttpServletRequest;
 import com.baidu.openrasp.tool.OSUtil;
-import com.baidu.openrasp.tool.Reflection;
 import com.baidu.openrasp.tool.model.ApplicationModel;
 
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -97,11 +96,11 @@ public class SecurityPolicyInfo extends EventInfo {
             info.put("policy_params", params);
         }
         // 攻击调用栈
-        StackTraceElement[] trace = filter(new Throwable().getStackTrace());
+        StackTraceElement[] trace = new Throwable().getStackTrace();
         info.put("stack_trace", stringify(trace));
-        if (Config.getConfig().getCloudSwitch()){
+        if (Config.getConfig().getCloudSwitch()) {
             // raspId
-            info.put("rasp_id",CloudCacheModel.getInstance().getRaspId());
+            info.put("rasp_id", CloudCacheModel.getInstance().getRaspId());
             // appId
             info.put("app_id", Config.getConfig().getCloudAppId());
         }

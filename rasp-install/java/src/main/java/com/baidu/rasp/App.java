@@ -30,12 +30,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.util.regex.Pattern;
 
 import static com.baidu.rasp.RaspError.E10005;
+import static com.baidu.rasp.RaspError.E10007;
 
 /**
  * Created by OpenRASP on 5/11/17.
@@ -46,6 +46,8 @@ public class App {
     public static String appSecret;
     public static String baseDir;
     public static String url;
+    public static int pid;
+    public static boolean isAttach = false;
     public static boolean keepConfig = false;
 
     public static final String REGEX_APPID = "^[a-z0-9]{40,40}$";
@@ -74,9 +76,10 @@ public class App {
         options.addOption("appid", true, "Value of cloud.appid");
         options.addOption("appsecret", true, "Value of cloud.appsecret");
         options.addOption("backendurl", true, "Value of cloud.backendurl");
-        options.addOption("keepconf", false, "If the parameter exists, reserved rasp.properties");
+        options.addOption("keepconf", false, "If the parameter exists, reserved openrasp.yml");
         options.addOption("help", false, "print options information");
         options.addOption("h", false, "print options information");
+        options.addOption("pid", true, "specify the pid that the rasp attach to");
         CommandLineParser parser = new PosixParser();
         CommandLine cmd = parser.parse(options, args);
         if (cmd.hasOption("help") || cmd.hasOption("h")) {
@@ -84,14 +87,25 @@ public class App {
         } else {
             if (cmd.hasOption("install") && cmd.hasOption("uninstall")) {
                 throw new RaspError(E10005 + "Can't use -install and -uninstall simultaneously");
-            } else if (cmd.hasOption("install")) {
-                baseDir = cmd.getOptionValue("install");
-                install = "install";
-            } else if (cmd.hasOption("uninstall")) {
-                baseDir = cmd.getOptionValue("uninstall");
-                install = "uninstall";
             } else {
-                throw new RaspError(E10005 + "One of -install and -uninstall must be specified");
+                if (cmd.hasOption("install")) {
+                    baseDir = cmd.getOptionValue("install");
+                    install = "install";
+                } else if (cmd.hasOption("uninstall")) {
+                    baseDir = cmd.getOptionValue("uninstall");
+                    install = "uninstall";
+                } else {
+                    throw new RaspError(E10005 + "One of -install and -uninstall must be specified");
+                }
+
+                if (cmd.hasOption("pid")) {
+                    isAttach = true;
+                    try {
+                        pid = Integer.parseInt(cmd.getOptionValue("pid"));
+                    } catch (NumberFormatException e) {
+                        throw new RaspError(E10005 + "The -pid parameter must have a integer value");
+                    }
+                }
             }
 
             keepConfig = cmd.hasOption("keepconf");
@@ -155,29 +169,46 @@ public class App {
                 "  -appid        Value of cloud.appid\n" +
                 "  -backendurl   Value of cloud.address\n" +
                 "  -appsecret    Value of cloud.appsecret\n" +
-                "  -keepconf     Do not overwrite rasp.properties\n" +
+                "  -keepconf     Do not overwrite openrasp.yml\n" +
                 "  -help/-h      Show this dialog\n";
         System.out.println(helpMsg);
     }
 
-    public static void main(String[] args) throws IOException, URISyntaxException {
+    public static void operateServer(String[] args) throws RaspError, ParseException, IOException {
         showBanner();
-        try {
-            argsParser(args);
-            checkArgs();
-            if ("install".equals(install)) {
-                File serverRoot = new File(baseDir);
-                InstallerFactory factory = newInstallerFactory();
-                Installer installer = factory.getInstaller(serverRoot);
+        argsParser(args);
+        checkArgs();
+        if ("install".equals(install)) {
+            File serverRoot = new File(baseDir);
+            InstallerFactory factory = newInstallerFactory();
+            Installer installer = factory.getInstaller(serverRoot);
+            if (installer != null) {
                 installer.install();
-            } else if ("uninstall".equals(install)) {
-                File serverRoot = new File(baseDir);
-                UninstallerFactory factory = newUninstallerFactory();
-                Uninstaller uninstaller = factory.getUninstaller(serverRoot);
-                uninstaller.uninstall();
+            } else {
+                throw new RaspError(E10007);
             }
+
+        } else if ("uninstall".equals(install)) {
+            File serverRoot = new File(baseDir);
+            UninstallerFactory factory = newUninstallerFactory();
+            Uninstaller uninstaller = factory.getUninstaller(serverRoot);
+            if (uninstaller != null) {
+                uninstaller.uninstall();
+            } else {
+                throw new RaspError(E10007);
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        try {
+            operateServer(args);
         } catch (Exception e) {
-            System.out.println(e.getMessage());
+            if (e instanceof RaspError) {
+                System.out.println(e.getMessage());
+            } else {
+                e.printStackTrace();
+            }
             showNotice();
             System.exit(1);
         }

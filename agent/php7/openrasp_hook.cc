@@ -18,13 +18,18 @@
 #include "openrasp_ini.h"
 #include "openrasp_inject.h"
 #include "openrasp_v8.h"
+#include "openrasp_output_detect.h"
 #include <new>
+#include <map>
+#include <algorithm>
 #include "agent/shared_config_manager.h"
 #include <unordered_map>
 #include "openrasp_content_type.h"
+#include "openrasp_check_type.h"
 
 extern "C"
 {
+#include "Zend/zend_exceptions.h"
 #include "ext/standard/php_fopen_wrappers.h"
 }
 
@@ -54,6 +59,13 @@ const std::string get_check_type_name(OpenRASPCheckType type)
 
 bool openrasp_zval_in_request(zval *item)
 {
+    std::string var_type;
+    return !fetch_name_in_request(item, var_type).empty();
+}
+
+std::string fetch_name_in_request(zval *item, std::string &var_type)
+{
+    std::string name;
     static const track_vars_pair pairs[] = {{TRACK_VARS_POST, "_POST"},
                                             {TRACK_VARS_GET, "_GET"},
                                             {TRACK_VARS_COOKIE, "_COOKIE"}};
@@ -64,19 +76,34 @@ bool openrasp_zval_in_request(zval *item)
         if (Z_TYPE_P(global) != IS_ARRAY &&
             !zend_is_auto_global_str(const_cast<char *>(pairs[index].name), strlen(pairs[index].name)))
         {
-            return false;
+            return name;
         }
         zval *val;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(global), val)
+        zend_string *key;
+        zend_ulong idx;
+        ZEND_HASH_FOREACH_KEY_VAL(Z_ARRVAL_P(global), idx, key, val)
         {
             if (Z_COUNTED_P(item) == Z_COUNTED_P(val))
             {
-                return true;
+                if (key != nullptr)
+                {
+                    name = std::string(ZSTR_VAL(key));
+                }
+                else
+                {
+                    zend_long actual = idx;
+                    name = std::to_string(actual);
+                }
             }
         }
         ZEND_HASH_FOREACH_END();
+        if (!name.empty())
+        {
+            var_type = std::string(pairs[index].name);
+            return name;
+        }
     }
-    return false;
+    return name;
 }
 
 void openrasp_buildin_php_risk_handle(OpenRASPActionType action, OpenRASPCheckType type, int confidence, zval *params, zval *message)
@@ -104,8 +131,20 @@ void openrasp_buildin_php_risk_handle(OpenRASPActionType action, OpenRASPCheckTy
 
 bool openrasp_check_type_ignored(OpenRASPCheckType check_type)
 {
-    return !LOG_G(in_request_process) ||
-           ((1 << check_type) & OPENRASP_HOOK_G(check_type_white_bit_mask));
+    if (!LOG_G(in_request_process))
+    {
+        return true;
+    }
+    if ((1 << check_type) & OPENRASP_HOOK_G(check_type_white_bit_mask))
+    {
+        return true;
+    }
+    if (check_type_transfer->is_buildin_check_type(check_type) &&
+        openrasp::scm->get_buildin_check_action(check_type) == AC_IGNORE)
+    {
+        return true;
+    }
+    return false;
 }
 
 bool openrasp_check_callable_black(const char *item_name, uint item_name_length)
@@ -226,23 +265,41 @@ static std::string resolve_request_id(std::string str)
     return str;
 }
 
+void set_location_header(int response_code)
+{
+    if (!SG(headers_sent))
+    {
+        std::string location = resolve_request_id("Location: " + OPENRASP_CONFIG(block.redirect_url));
+        sapi_header_line header;
+        header.line = const_cast<char *>(location.c_str());
+        header.line_len = location.length();
+        header.response_code = response_code;
+        sapi_header_op(SAPI_HEADER_REPLACE, &header);
+    }
+}
+
+void reset_response()
+{
+    int response_code = OPENRASP_CONFIG(block.status_code);
+    SG(sapi_headers).http_response_code = response_code;
+    if (response_code >= 300 && response_code < 400)
+    {
+        set_location_header(response_code);
+    }
+}
+
 void handle_block()
 {
+    if (OUTPUT_G(output_detect))
+    {
+        return;
+    }
     int status = php_output_get_status();
     if (status & PHP_OUTPUT_WRITTEN)
     {
         php_output_discard_all();
     }
-
-    if (!SG(headers_sent))
-    {
-        std::string location = resolve_request_id("Location: " + std::string(OPENRASP_CONFIG(block.redirect_url)));
-        sapi_header_line header;
-        header.line = const_cast<char *>(location.c_str());
-        header.line_len = location.length();
-        header.response_code = OPENRASP_CONFIG(block.status_code);
-        sapi_header_op(SAPI_HEADER_REPLACE, &header);
-    }
+    reset_response();
 
     {
         OpenRASPContentType::ContentType k_type = OpenRASPContentType::ContentType::cNull;
@@ -302,29 +359,8 @@ void handle_block()
             php_output_flush();
         }
     }
+    zend_clear_exception();
     zend_bailout();
-}
-
-/**
- * 调用 openrasp_check 提供的方法进行检测
- * 若需要拦截，直接返回重定向信息，并终止请求
- */
-void check(OpenRASPCheckType type, zval *params)
-{
-    bool result = false;
-    openrasp::Isolate *isolate = OPENRASP_V8_G(isolate);
-    if (LIKELY(isolate))
-    {
-        v8::HandleScope handlescope(isolate);
-        auto v8_type = NewV8String(isolate, get_check_type_name(type));
-        auto v8_params = v8::Local<v8::Object>::Cast(NewV8ValueFromZval(isolate, params));
-        zval_ptr_dtor(params);
-        result = isolate->Check(v8_type, v8_params, OPENRASP_CONFIG(plugin.timeout.millis));
-    }
-    if (result)
-    {
-        handle_block();
-    }
 }
 
 extern int include_or_eval_handler(zend_execute_data *execute_data);
@@ -336,6 +372,7 @@ PHP_GINIT_FUNCTION(openrasp_hook)
     new (openrasp_hook_globals) _zend_openrasp_hook_globals;
 #endif
     openrasp_hook_globals->check_type_white_bit_mask = 0;
+    openrasp_hook_globals->lru.reset(OPENRASP_CONFIG(lru.max_size));
 }
 
 PHP_GSHUTDOWN_FUNCTION(openrasp_hook)
@@ -379,10 +416,9 @@ PHP_RINIT_FUNCTION(openrasp_hook)
                 OPENRASP_HOOK_G(check_type_white_bit_mask) = openrasp::scm->get_check_type_white_bit_mask(url_str.substr(found + COLON_TWO_SLASHES.size()));
             }
         }
-        if (!OPENRASP_HOOK_G(lru) ||
-            OPENRASP_HOOK_G(lru)->max_size() != OPENRASP_CONFIG(lru.max_size))
+        if (OPENRASP_HOOK_G(lru).max_size() != OPENRASP_CONFIG(lru.max_size))
         {
-            OPENRASP_HOOK_G(lru) = new openrasp::LRU<std::string, bool>(OPENRASP_CONFIG(lru.max_size));
+            OPENRASP_HOOK_G(lru).reset(OPENRASP_CONFIG(lru.max_size));
         }
     }
     return SUCCESS;

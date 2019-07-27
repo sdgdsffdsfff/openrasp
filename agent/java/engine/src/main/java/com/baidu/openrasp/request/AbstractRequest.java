@@ -17,13 +17,15 @@
 package com.baidu.openrasp.request;
 
 import com.baidu.openrasp.HookHandler;
+import com.baidu.openrasp.cloud.model.ErrorType;
+import com.baidu.openrasp.cloud.utils.CloudUtils;
 import com.baidu.openrasp.config.Config;
 import com.baidu.openrasp.tool.Reflection;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.ByteArrayOutputStream;
-import java.io.CharArrayReader;
 import java.io.CharArrayWriter;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -44,7 +46,7 @@ public abstract class AbstractRequest {
     protected int maxBodySize = 4096;
     protected String requestId;
     protected boolean canGetParameter = false;
-    protected HashMap<String, String[]> fileUploadCache = new HashMap<String, String[]>();
+    protected HashMap<String, String[]> fileUploadCache = null;
 
     /**
      * constructor
@@ -68,7 +70,6 @@ public abstract class AbstractRequest {
 
     /**
      * constructor 测试时使用的构造函数
-     *
      */
     public AbstractRequest(int request) {
     }
@@ -174,6 +175,11 @@ public abstract class AbstractRequest {
      */
     public abstract StringBuffer getRequestURL();
 
+    public String getRequestURLString() {
+        Object ret = getRequestURL();
+        return ret != null ? ret.toString() : null;
+    }
+
     /**
      * 获取服务器名称
      *
@@ -219,6 +225,20 @@ public abstract class AbstractRequest {
      */
     public abstract Enumeration<String> getHeaderNames();
 
+    public String[] getHeadersArray() {
+        ArrayList<String> headers = new ArrayList<String>();
+        Enumeration<String> headerNames = getHeaderNames();
+        if (headerNames != null) {
+            while (headerNames.hasMoreElements()) {
+                String key = headerNames.nextElement();
+                String value = getHeader(key);
+                headers.add(key.toLowerCase());
+                headers.add(value);
+            }
+        }
+        return headers.toArray(new String[0]);
+    }
+
     /**
      * 获取请求的url中的 Query String 参数部分
      *
@@ -240,6 +260,13 @@ public abstract class AbstractRequest {
      * @return app部署根路径
      */
     public abstract String getAppBasePath();
+
+    /**
+     * 获取请求的contentType
+     *
+     * @return contentType
+     */
+    public abstract String getContentType();
 
     /**
      * 获取自定义的clientip
@@ -326,6 +353,13 @@ public abstract class AbstractRequest {
         }
     }
 
+    /**
+     * 返回body的编码类型
+     *
+     * @return CharacterEncoding
+     */
+    public abstract String getCharacterEncoding();
+
     protected boolean setCharacterEncodingFromConfig() {
         try {
             String paramEncoding = Config.getConfig().getRequestParamEncoding();
@@ -334,12 +368,18 @@ public abstract class AbstractRequest {
                 return true;
             }
         } catch (Exception e) {
-            HookHandler.LOGGER.warn("set character encoding failed", e);
+            String message = "set character encoding failed";
+            int errorCode = ErrorType.RUNTIME_ERROR.getCode();
+            HookHandler.LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
         }
         return false;
     }
 
     public HashMap<String, String[]> getFileUploadCache() {
         return fileUploadCache;
+    }
+
+    public void setFileUploadCache(HashMap<String, String[]> cache) {
+        fileUploadCache = cache;
     }
 }

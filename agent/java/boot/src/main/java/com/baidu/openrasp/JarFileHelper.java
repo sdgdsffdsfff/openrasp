@@ -45,13 +45,14 @@ public class JarFileHelper {
      *
      * @return jar包路径
      */
-    private static String getLocalJarPath() {
+    public static String getLocalJarPath() {
         URL localUrl = Agent.class.getProtectionDomain().getCodeSource().getLocation();
         String path = null;
         try {
             path = URLDecoder.decode(
                     localUrl.getFile().replace("+", "%2B"), "UTF-8");
         } catch (UnsupportedEncodingException e) {
+            System.err.println("[OpenRASP] Failed to get jarFile path.");
             e.printStackTrace();
         }
         return path;

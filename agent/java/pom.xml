@@ -6,11 +6,12 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <rasp.version>1.1.2</rasp.version>
     </properties>
 
     <groupId>com.baidu.openrasp</groupId>
     <artifactId>openrasp</artifactId>
-    <version>1.0.0-RC1</version>
+    <version>${rasp.version}</version>
     <packaging>pom</packaging>
 
     <scm>
@@ -29,7 +30,7 @@
             <dependency>
                 <groupId>com.baidu.openrasp</groupId>
                 <artifactId>rasp-boot</artifactId>
-                <version>1.0.0-RC1</version>
+                <version>${rasp.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -113,7 +114,8 @@
                                         <Git-Commit>${git-commit-id.commit.id.abbrev}</Git-Commit>
                                         <Git-Branch>${git-commit-id.branch}</Git-Branch>
                                         <Last-Commit-User-Name>${git-commit-id.commit.user.name}</Last-Commit-User-Name>
-                                        <Last-Commit-User-Email>${git-commit-id.commit.user.email}</Last-Commit-User-Email>
+                                        <Last-Commit-User-Email>${git-commit-id.commit.user.email}
+                                        </Last-Commit-User-Email>
                                     </manifestEntries>
                                 </transformer>
                             </transformers>
@@ -127,11 +129,19 @@
                                     <shadedPattern>com.baidu.openrasp</shadedPattern>
                                 </relocation>
                                 <relocation>
+                                    <pattern>org.apache.commons.cli</pattern>
+                                    <shadedPattern>com.baidu.openrasp.cli</shadedPattern>
+                                </relocation>
+                                <relocation>
                                     <pattern>org.objectweb</pattern>
                                     <shadedPattern>com.baidu.openrasp</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>com.google</pattern>
+                                    <shadedPattern>com.baidu.openrasp</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.yaml</pattern>
                                     <shadedPattern>com.baidu.openrasp</shadedPattern>
                                 </relocation>
                                 <relocation>
@@ -143,12 +153,32 @@
                                     <shadedPattern>log4j.rasp.configuration</shadedPattern>
                                 </relocation>
                                 <relocation>
+                                    <pattern>log4j.xml</pattern>
+                                    <shadedPattern>log4j.rasp.xml</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>log4j.properties</pattern>
+                                    <shadedPattern>log4j.rasp.properties</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>log4j.configuratorClass</pattern>
+                                    <shadedPattern>log4j.rasp.configuratorClass</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>log4j.defaultInitOverride</pattern>
+                                    <shadedPattern>log4j.rasp.defaultInitOverride</shadedPattern>
+                                </relocation>
+                                <relocation>
                                     <pattern>org.abego</pattern>
                                     <shadedPattern>com.baidu.openrasp.abego</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>org.antlr</pattern>
                                     <shadedPattern>com.baidu.openrasp.antlr</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.stringtemplate</pattern>
+                                    <shadedPattern>com.baidu.openrasp.stringtemplate</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>org.stringtemplate</pattern>
@@ -165,6 +195,10 @@
                                 <relocation>
                                     <pattern>org.mozilla</pattern>
                                     <shadedPattern>com.baidu.openrasp.org.mozilla</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.strobel</pattern>
+                                    <shadedPattern>com.baidu.openrasp.strobel</shadedPattern>
                                 </relocation>
                             </relocations>
                         </configuration>

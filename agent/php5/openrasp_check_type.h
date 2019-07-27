@@ -21,6 +21,7 @@
 #include <string>
 #include <memory>
 #include <set>
+#include <map>
 
 typedef enum check_type_t
 {
@@ -36,13 +37,17 @@ typedef enum check_type_t
   INCLUDE,
   DB_CONNECTION,
   SQL,
-  SQL_SLOW_QUERY,
   SQL_PREPARED,
+  SQL_ERROR,
   SSRF,
   WEBSHELL_EVAL,
   WEBSHELL_COMMAND,
   WEBSHELL_FILE_PUT_CONTENTS,
+  WEBSHELL_LD_PRELOAD,
   XSS_ECHO,
+  XSS_USER_INPUT,
+  REQUEST,
+  REQUEST_END,
   ALL_TYPE
 } OpenRASPCheckType;
 
@@ -58,8 +63,8 @@ public:
   CheckTypeTransfer();
   std::string type_to_name(OpenRASPCheckType type) const;
   OpenRASPCheckType name_to_type(const std::string &name) const;
-  std::vector<std::string> get_all_names() const;
   std::map<std::string, std::string> get_buildin_action_map() const;
+  bool is_buildin_check_type(OpenRASPCheckType type) const;
 };
 
 extern std::unique_ptr<CheckTypeTransfer> check_type_transfer;

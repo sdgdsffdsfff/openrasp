@@ -21,7 +21,8 @@ import (
 	"rasp-cloud/controllers/api"
 	"rasp-cloud/controllers/api/fore_logs"
 	"rasp-cloud/tools"
-	"rasp-cloud/environment"
+	"rasp-cloud/conf"
+	"rasp-cloud/controllers"
 )
 
 func InitRouter() {
@@ -40,6 +41,11 @@ func InitRouter() {
 			beego.NSNamespace("/policy",
 				beego.NSInclude(
 					&agent_logs.PolicyAlarmController{},
+				),
+			),
+			beego.NSNamespace("/error",
+				beego.NSInclude(
+					&agent_logs.ErrorController{},
 				),
 			),
 		),
@@ -72,6 +78,11 @@ func InitRouter() {
 					&fore_logs.PolicyAlarmController{},
 				),
 			),
+			beego.NSNamespace("/error",
+				beego.NSInclude(
+					&fore_logs.ErrorController{},
+				),
+			),
 		),
 		beego.NSNamespace("/app",
 			beego.NSInclude(
@@ -98,25 +109,27 @@ func InitRouter() {
 				&api.OperationController{},
 			),
 		),
-		beego.NSNamespace("/agentdomain",
+		beego.NSNamespace("/server",
 			beego.NSInclude(
-				&api.AgentDomainController{},
+				&api.ServerController{},
 			),
 		),
 	)
 	userNS := beego.NewNamespace("/user", beego.NSInclude(&api.UserController{}))
+	pingNS := beego.NewNamespace("/ping", beego.NSInclude(&controllers.PingController{}))
 	ns := beego.NewNamespace("/v1")
-	startType := *environment.StartFlag.StartType
-	if startType == environment.StartTypeForeground {
+	ns.Namespace(pingNS)
+	startType := *conf.AppConfig.Flag.StartType
+	if startType == conf.StartTypeForeground {
 		ns.Namespace(foregroudNS, userNS)
-	} else if startType == environment.StartTypeAgent {
+	} else if startType == conf.StartTypeAgent {
 		ns.Namespace(agentNS)
-	} else if startType == environment.StartTypeDefault {
+	} else if startType == conf.StartTypeDefault {
 		ns.Namespace(foregroudNS, agentNS, userNS)
 	} else {
 		tools.Panic(tools.ErrCodeStartTypeNotSupport, "The start type is not supported: "+startType, nil)
 	}
-	if startType == environment.StartTypeForeground || startType == environment.StartTypeDefault {
+	if startType == conf.StartTypeForeground || startType == conf.StartTypeDefault {
 		beego.SetStaticPath("//", "dist")
 	}
 	beego.AddNamespace(ns)

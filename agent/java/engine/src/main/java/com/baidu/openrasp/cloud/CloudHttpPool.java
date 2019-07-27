@@ -16,7 +16,10 @@
 
 package com.baidu.openrasp.cloud;
 
+import com.baidu.openrasp.cloud.model.ErrorType;
 import com.baidu.openrasp.cloud.model.GenericResponse;
+import com.baidu.openrasp.cloud.utils.CloudUtils;
+import org.apache.log4j.helpers.LogLog;
 
 import java.util.concurrent.*;
 
@@ -36,11 +39,11 @@ public class CloudHttpPool extends CloudHttp {
     }
 
     @Override
-    public GenericResponse request(final String url, final String content) {
+    public GenericResponse logRequest(final String url, final String content) {
         Callable callable = new Callable() {
             @Override
             public GenericResponse call() {
-                return CloudHttpPool.super.request(url, content);
+                return CloudHttpPool.super.logRequest(url, content);
             }
         };
         Future<GenericResponse> future = threadPool.submit(callable);
@@ -54,7 +57,9 @@ public class CloudHttpPool extends CloudHttp {
         try {
             return future.get();
         } catch (Exception e) {
-            CloudManager.LOGGER.warn("get http result for" + url + "from future failed", e);
+            String message = "get http result for" + url + "from future failed";
+            int errorCode = ErrorType.REQUEST_ERROR.getCode();
+            LogLog.warn(CloudUtils.getExceptionObject(message, errorCode).toString(), e);
         }
         return null;
     }

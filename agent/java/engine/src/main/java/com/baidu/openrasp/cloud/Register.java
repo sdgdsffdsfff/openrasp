@@ -24,6 +24,7 @@ import com.baidu.openrasp.cloud.utils.CloudUtils;
 import com.baidu.openrasp.config.Config;
 import com.baidu.openrasp.tool.OSUtil;
 import com.baidu.openrasp.tool.model.ApplicationModel;
+import com.baidu.openrasp.tool.model.BuildRASPModel;
 import com.google.gson.Gson;
 
 import java.util.HashMap;
@@ -49,22 +50,28 @@ public class Register {
         @Override
         public void run() {
             while (!this.registerFlag) {
-                String content = new Gson().toJson(GenerateParameters());
-                String url = CloudRequestUrl.CLOUD_REGISTER_URL;
-                GenericResponse response = new CloudHttp().request(url, content);
-                if (CloudUtils.checkRequestResult(response)) {
-                    this.registerFlag = true;
-                    Config.getConfig().setHookWhiteAll("false");
-                    System.out.println("[OpenRASP] RASP agent successfully registered, enabling remote management");
-                    CloudManager.init();
-                } else {
-                    System.out.println("[OpenRASP] Failed to register RASP agent, please refer to rasp logs for details");
-                    CloudManager.LOGGER.warn(CloudUtils.handleError(ErrorType.REGISTER_ERROR, response));
-                }
                 try {
+                    String content = new Gson().toJson(GenerateParameters());
+                    String url = CloudRequestUrl.CLOUD_REGISTER_URL;
+                    GenericResponse response = new CloudHttp().commonRequest(url, content);
+                    if (CloudUtils.checkRequestResult(response)) {
+                        this.registerFlag = true;
+                        Config.getConfig().setHookWhiteAll("false");
+                        System.out.println("[OpenRASP] RASP agent successfully registered, enabling remote management, please refer to rasp logs for details");
+                        CloudManager.LOGGER.info("[OpenRASP] RASP agent successfully registered,registration details are as follows: \n" + content);
+                        CloudManager.init();
+                    } else {
+                        System.out.println("[OpenRASP] Failed to register RASP agent, please refer to rasp logs for details");
+                        String message = CloudUtils.handleError(ErrorType.REGISTER_ERROR, response);
+                        int errorCode = ErrorType.REGISTER_ERROR.getCode();
+                        CloudManager.LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode));
+                    }
                     Thread.sleep(REGISTER_DELAY);
-                } catch (InterruptedException e) {
-                    //continue next loop
+
+                } catch (Throwable e) {
+                    String message = e.getMessage();
+                    int errorCode = ErrorType.REGISTER_ERROR.getCode();
+                    CloudManager.LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
                 }
             }
         }
@@ -73,17 +80,16 @@ public class Register {
     private static Map<String, Object> GenerateParameters() {
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("id", CloudCacheModel.getInstance().getRaspId());
-        params.put("version", ApplicationModel.getRaspVersion());
+        params.put("version", BuildRASPModel.getRaspVersion());
         params.put("hostname", OSUtil.getHostName());
         params.put("language", "java");
         params.put("language_version", System.getProperty("java.version"));
         params.put("server_type", ApplicationModel.getServerName());
         params.put("server_version", ApplicationModel.getVersion());
-        String raspHome = Config.getConfig().getBaseDirectory();
-        params.put("rasp_home", raspHome);
+        params.put("rasp_home", Config.getConfig().getBaseDirectory());
         params.put("register_ip", CloudCacheModel.getInstance().getMasterIp());
-        int heartbeatInterval = Config.getConfig().getHeartbeatInterval();
-        params.put("heartbeat_interval",heartbeatInterval);
+        params.put("heartbeat_interval", Config.getConfig().getHeartbeatInterval());
+        params.put("environ", ApplicationModel.getSystemEnv());
         return params;
     }
 }

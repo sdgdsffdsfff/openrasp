@@ -23,11 +23,12 @@ PRE_HOOK_FUNCTION(move_uploaded_file, FILE_UPLOAD);
 
 void pre_global_move_uploaded_file_FILE_UPLOAD(OPENRASP_INTERNAL_FUNCTION_PARAMETERS)
 {
-    zval *name, *dest;
+    zval args[2];
+    zval *name = &args[0], *dest = &args[1];
     int argc = MIN(2, ZEND_NUM_ARGS());
 
     if (argc < 2 ||
-        zend_get_parameters_ex(argc, &name, &dest) != SUCCESS ||
+        zend_get_parameters_array_ex(argc, args) != SUCCESS ||
         Z_TYPE_P(name) != IS_STRING ||
         Z_TYPE_P(dest) != IS_STRING ||
         !zend_hash_exists(SG(rfc1867_uploaded_files), Z_STR_P(name)) ||
@@ -38,7 +39,10 @@ void pre_global_move_uploaded_file_FILE_UPLOAD(OPENRASP_INTERNAL_FUNCTION_PARAME
     }
 
     zval *realname = nullptr, *file;
-    ZEND_HASH_FOREACH_VAL(Z_ARRVAL(PG(http_globals)[TRACK_VARS_FILES]), file)
+    zend_string *key;
+    std::string form_data_name;
+    zend_ulong idx;
+    ZEND_HASH_FOREACH_KEY_VAL(Z_ARRVAL(PG(http_globals)[TRACK_VARS_FILES]), idx, key, file)
     {
         zval *tmp_name = NULL;
         if (Z_TYPE_P(file) != IS_ARRAY ||
@@ -50,6 +54,15 @@ void pre_global_move_uploaded_file_FILE_UPLOAD(OPENRASP_INTERNAL_FUNCTION_PARAME
         }
         if ((realname = zend_hash_str_find(Z_ARRVAL_P(file), ZEND_STRL("name"))) != NULL)
         {
+            if (key != nullptr)
+            {
+                form_data_name = std::string(ZSTR_VAL(key));
+            }
+            else
+            {
+                zend_long actual = idx;
+                form_data_name = std::to_string(actual);
+            }
             break;
         }
     }
@@ -59,34 +72,28 @@ void pre_global_move_uploaded_file_FILE_UPLOAD(OPENRASP_INTERNAL_FUNCTION_PARAME
         realname = dest;
     }
     php_stream *stream = php_stream_open_wrapper(Z_STRVAL_P(name), "rb", 0, NULL);
-    if (!stream)
+    if (stream)
     {
-        return;
-    }
-    zend_string *buffer = php_stream_copy_to_mem(stream, 4 * 1024, 0);
-    stream->is_persistent ? php_stream_pclose(stream) : php_stream_close(stream);
-    if (!buffer)
-    {
-        return;
-    }
-
-    openrasp::Isolate *isolate = OPENRASP_V8_G(isolate);
-    if (!isolate)
-    {
-        zend_string_release(buffer);
-        return;
-    }
-    bool is_block = false;
-    {
-        v8::HandleScope handle_scope(isolate);
-        auto params = v8::Object::New(isolate);
-        params->Set(openrasp::NewV8String(isolate, "filename"), openrasp::NewV8String(isolate, Z_STRVAL_P(realname), Z_STRLEN_P(realname)));
-        params->Set(openrasp::NewV8String(isolate, "content"), openrasp::NewV8String(isolate, buffer->val, MIN(buffer->len, 4 * 1024)));
-        zend_string_release(buffer);
-        is_block = isolate->Check(openrasp::NewV8String(isolate, get_check_type_name(check_type)), params, OPENRASP_CONFIG(plugin.timeout.millis));
-    }
-    if (is_block)
-    {
-        handle_block();
+        zend_string *buffer = php_stream_copy_to_mem(stream, 4 * 1024, 0);
+        stream->is_persistent ? php_stream_pclose(stream) : php_stream_close(stream);
+        if (buffer)
+        {
+            openrasp::CheckResult check_result = openrasp::CheckResult::kCache;
+            openrasp::Isolate *isolate = OPENRASP_V8_G(isolate);
+            if (isolate)
+            {
+                v8::HandleScope handle_scope(isolate);
+                auto params = v8::Object::New(isolate);
+                params->Set(openrasp::NewV8String(isolate, "name"), openrasp::NewV8String(isolate, form_data_name));
+                params->Set(openrasp::NewV8String(isolate, "filename"), openrasp::NewV8String(isolate, Z_STRVAL_P(realname), Z_STRLEN_P(realname)));
+                params->Set(openrasp::NewV8String(isolate, "content"), openrasp::NewV8String(isolate, buffer->val, MIN(buffer->len, 4 * 1024)));
+                check_result = Check(isolate, openrasp::NewV8String(isolate, get_check_type_name(check_type)), params, OPENRASP_CONFIG(plugin.timeout.millis));
+            }
+            zend_string_release(buffer);
+            if (check_result == openrasp::CheckResult::kBlock)
+            {
+                handle_block();
+            }
+        }
     }
 }

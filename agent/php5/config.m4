@@ -1,8 +1,8 @@
 PHP_ARG_ENABLE(openrasp, whether to enable openrasp support,
 [  --enable-openrasp       Enable openrasp support])
 
-PHP_ARG_WITH(v8, for v8 support,
-[  --with-v8=DIR           Set the path to v8], yes, no)
+PHP_ARG_WITH(openrasp-v8, for openrasp-v8 support,
+[  --with-openrasp-v8=DIR  Set the path to openrasp-v8], no, no)
 
 PHP_ARG_WITH(gettext, for gettext support,
 [  --with-gettext=DIR   Set the path to gettext], no, no)
@@ -10,14 +10,20 @@ PHP_ARG_WITH(gettext, for gettext support,
 PHP_ARG_ENABLE(openrasp-remote-manager, whether to enable openrasp remote manager support,
 [  --enable-openrasp-remote-manager       Enable openrasp remote manager support (Linux Only)], no, no)
 
-PHP_ARG_WITH(pcre-regex, for pcre support,
-[  --with-pcre-regex=DIR   Include Perl Compatible Regular Expressions support], no, no)
-
 PHP_ARG_WITH(openssl, for openssl support,
 [  --with-openssl=DIR   Include openssl support], no, no)
 
 PHP_ARG_WITH(curl, for curl support,
 [  --with-curl=DIR   Include curl support], no, no)
+
+PHP_ARG_ENABLE(fswatch, Enable fswatch,
+[  --enable-fswatch      Enable fswatch], no, no)
+
+PHP_ARG_ENABLE(line-coverage, Enable line coverage,
+[  --enable-line-coverage      Enable line coverage], no, no)
+
+PHP_ARG_ENABLE(cli-support, Enable cli support,
+[  --enable-cli-support      Enable cli support], no, no)
 
 if test "$PHP_OPENRASP" != "no"; then
   PHP_REQUIRE_CXX()
@@ -25,58 +31,33 @@ if test "$PHP_OPENRASP" != "no"; then
     AC_MSG_ERROR([JSON is not enabled! Add --enable-json to your configure line.])
   fi
 
-  SEARCH_PATH="/usr/local /usr"
-
-  SEARCH_FOR="include/v8.h"
-  if test -r $PHP_V8/$SEARCH_FOR; then
-    V8_PATH=$PHP_V8
-  else
-    AC_MSG_CHECKING([for v8 files in default path])
-    for i in $SEARCH_PATH ; do
-      if test -r $i/$SEARCH_FOR; then
-        V8_PATH=$i
-        AC_MSG_RESULT(found in $i)
-      fi
-    done
-  fi
-
-  if test -z "$V8_PATH"; then
+  AC_MSG_CHECKING([for openrasp-v8 library])
+  if test $PHP_OPENRASP_V8 == "no"; then
     AC_MSG_RESULT([not found])
-    AC_MSG_ERROR([Please reinstall the v8 distribution])
+    AC_MSG_ERROR([Please set openrasp-v8 path with "--with-openrasp-v8"])
+  else
+    AC_MSG_RESULT([yes])
   fi
 
-  PHP_ADD_INCLUDE($V8_PATH/include)
-  V8_LIBS="$V8_PATH/lib/libv8_{base,libsampler,libbase,libplatform,snapshot}.a"
+  PHP_ADD_INCLUDE($PHP_OPENRASP_V8)
+  OPENRASP_LIBS="$OPENRASP_LIBS $PHP_OPENRASP_V8/php/build/libopenrasp_v8_php.a"
   case $host_os in
     darwin* )
-      OPENRASP_LIBS="-Wl,$V8_LIBS $OPENRASP_LIBS"
+      PREBUILTS_ROOT="$PHP_OPENRASP_V8/prebuilts/darwin"
+      PHP_ADD_INCLUDE($PREBUILTS_ROOT/include)
+      OPENRASP_LIBS="$OPENRASP_LIBS -L$PREBUILTS_ROOT/lib64 -lv8_monolith"
       ;;
     * )
-      PHP_ADD_LIBRARY(rt, , OPENRASP_SHARED_LIBADD)
-      PHP_ADD_LIBRARY(dl, , OPENRASP_SHARED_LIBADD)
-      OPENRASP_LIBS="-Wl,--whole-archive -Wl,$V8_LIBS -Wl,--no-whole-archive -pthread $OPENRASP_LIBS"
+      PREBUILTS_ROOT="$PHP_OPENRASP_V8/prebuilts/linux"
+      PHP_ADD_INCLUDE($PREBUILTS_ROOT/include)
+      PHP_ADD_INCLUDE($PREBUILTS_ROOT/include/c++/v1)
+      CXXFLAGS="$CXXFLAGS -nostdinc++"
+      OPENRASP_LIBS="$OPENRASP_LIBS -L$PREBUILTS_ROOT/lib64 -Wl,-Bstatic -lv8_monolith -lc++ -lc++abi -Wl,-Bdynamic"
+      OPENRASP_LIBS="$OPENRASP_LIBS -nodefaultlibs -lm -lc -lrt -lgcc_s -ldl -lpthread"
       ;;
   esac
 
-  AC_MSG_CHECKING([for xxd])
-  if command -v xxd >/dev/null 2>&1; then
-    AC_MSG_RESULT([found])
-  else
-    AC_MSG_RESULT([not found])
-    AC_MSG_ERROR([Please install xxd])
-  fi
-
-  AC_CONFIG_COMMANDS([convert-*.js-to-openrasp_v8_js.h], [
-    pushd $builddir >/dev/null 2>&1
-    xxd -i console.js > openrasp_v8_js.h
-    xxd -i checkpoint.js >> openrasp_v8_js.h
-    xxd -i context.js >> openrasp_v8_js.h
-    xxd -i error.js >> openrasp_v8_js.h
-    xxd -i rasp.js >> openrasp_v8_js.h
-    xxd -i sql_tokenize.js >> openrasp_v8_js.h
-    xxd -i cmd_tokenize.js >> openrasp_v8_js.h
-    popd >/dev/null 2>&1
-  ], [builddir=PHP_EXT_BUILDDIR([openrasp])/js])
+  SEARCH_PATH="/usr/local /usr"
 
   if test "$PHP_GETTEXT" != "no"; then
     SEARCH_FOR="/include/libintl.h"
@@ -223,6 +204,25 @@ if test "$PHP_OPENRASP" != "no"; then
           AC_MSG_RESULT([$OPENRASP_CURL_INCDIR])
           PHP_ADD_INCLUDE($OPENRASP_CURL_INCDIR)
 
+          CURL_CONFIG="curl-config"
+          AC_MSG_CHECKING(for cURL 7.10.5 or greater)
+
+          if ${OPENRASP_CURL_INCDIR}/bin/curl-config --libs > /dev/null 2>&1; then
+            CURL_CONFIG=${OPENRASP_CURL_INCDIR}/bin/curl-config
+          else
+            if ${OPENRASP_CURL_INCDIR}/curl-config --libs > /dev/null 2>&1; then
+              CURL_CONFIG=${OPENRASP_CURL_INCDIR}/curl-config
+            fi
+          fi
+
+          curl_version_full=`$CURL_CONFIG --version`
+          curl_version=`echo ${curl_version_full} | sed -e 's/libcurl //' | $AWK 'BEGIN { FS = "."; } { printf "%d", ($1 * 1000 + $2) * 1000 + $3;}'`
+          if test "$curl_version" -ge 7010005; then
+            AC_MSG_RESULT($curl_version_full)
+          else
+            AC_MSG_ERROR(cURL version 7.10.5 or later is required to compile openrasp)
+          fi
+
           AC_MSG_CHECKING([for curl library location])
           
           for i in $CURL_SEARCH_PATH ; do
@@ -269,77 +269,66 @@ if test "$PHP_OPENRASP" != "no"; then
     esac
   fi
 
-  if test "$ext_shared" != "no"; then
-    if test "$PHP_PCRE_REGEX" != "no" && test -n "$PHP_PCRE_REGEX"; then
-      PCRE_SEARCH_PATH="$PHP_PCRE_REGEX"
-    else
-      PCRE_SEARCH_PATH="$SEARCH_PATH"
-    fi
-
-    AC_MSG_CHECKING([for PCRE headers location])
-    for i in $PCRE_SEARCH_PATH ; do
-      for j in $i $i/include $i/include/pcre $i/local/include; do
-        test -f $j/pcre.h && OPENRASP_PCRE_INCDIR=$j
-      done
-    done
-
-    if test -z "$OPENRASP_PCRE_INCDIR"; then
-      AC_MSG_ERROR([Could not find pcre.h in $PCRE_SEARCH_PATH])
-    fi
-    AC_MSG_RESULT([$OPENRASP_PCRE_INCDIR])
-    PHP_ADD_INCLUDE($OPENRASP_PCRE_INCDIR)
-
-    AC_MSG_CHECKING([for PCRE library location])
-    for i in $PCRE_SEARCH_PATH ; do
-      for j in $i $i/$PHP_LIBDIR $i/lib64 $i/lib/x86_64-linux-gnu; do
-        if test -f $j/libpcre.$SHLIB_SUFFIX_NAME;then
-          OPENRASP_PCRE_LIBDIR=$j
-          PHP_ADD_LIBRARY_WITH_PATH(pcre, $OPENRASP_PCRE_LIBDIR, OPENRASP_SHARED_LIBADD)
-        elif test -f $j/libpcre.a; then
-          OPENRASP_PCRE_LIBDIR=$j
-          SSL_LIBS="$OPENRASP_PCRE_LIBDIR/libpcre.a"
-          case $host_os in
-            darwin* )
-              OPENRASP_LIBS="-Wl,$SSL_LIBS $OPENRASP_LIBS"
-              ;;
-            * )
-              OPENRASP_LIBS="-Wl,--whole-archive -Wl,$SSL_LIBS -Wl,--no-whole-archive $OPENRASP_LIBS"
-              ;;
-          esac
-        fi
-        if test -n "$OPENRASP_PCRE_LIBDIR" ; then
-          break 2
-        fi
-      done
-    done
-
-    if test -z "$OPENRASP_PCRE_LIBDIR" ; then
-      AC_MSG_ERROR([Could not find libpcre.(a|$SHLIB_SUFFIX_NAME) in $PCRE_SEARCH_PATH])
-    fi
-    AC_MSG_RESULT([$OPENRASP_PCRE_LIBDIR])
+  if test "$PHP_FSWATCH" != "no"; then
+    LIBFSWATCH_SOURCE="openrasp_fswatch.cc \
+      libfswatch/c++/path_utils.cpp \
+      libfswatch/c++/fen_monitor.cpp \
+      libfswatch/c++/fsevents_monitor.cpp \
+      libfswatch/c++/monitor.cpp \
+      libfswatch/c++/filter.cpp \
+      libfswatch/c++/inotify_monitor.cpp \
+      libfswatch/c++/windows_monitor.cpp \
+      libfswatch/c++/string/string_utils.cpp \
+      libfswatch/c++/event.cpp \
+      libfswatch/c++/poll_monitor.cpp \
+      libfswatch/c++/windows/win_handle.cpp \
+      libfswatch/c++/windows/win_error_message.cpp \
+      libfswatch/c++/windows/win_strings.cpp \
+      libfswatch/c++/windows/win_paths.cpp \
+      libfswatch/c++/windows/win_directory_change_event.cpp \
+      libfswatch/c++/kqueue_monitor.cpp \
+      libfswatch/c++/libfswatch_exception.cpp \
+      libfswatch/c/libfswatch_log.cpp \
+      libfswatch/c/libfswatch.cpp \
+      libfswatch/c/cevent.cpp"
+    PHP_ADD_INCLUDE("PHP_EXT_BUILDDIR([openrasp])/libfswatch")
+    AC_DEFINE([HAVE_FSWATCH], [1], [Enable fswatch support])
   fi
 
-  LIBFSWATCH_SOURCE="libfswatch/c++/path_utils.cpp \
-    libfswatch/c++/fen_monitor.cpp \
-    libfswatch/c++/fsevents_monitor.cpp \
-    libfswatch/c++/monitor.cpp \
-    libfswatch/c++/filter.cpp \
-    libfswatch/c++/inotify_monitor.cpp \
-    libfswatch/c++/windows_monitor.cpp \
-    libfswatch/c++/string/string_utils.cpp \
-    libfswatch/c++/event.cpp \
-    libfswatch/c++/poll_monitor.cpp \
-    libfswatch/c++/windows/win_handle.cpp \
-    libfswatch/c++/windows/win_error_message.cpp \
-    libfswatch/c++/windows/win_strings.cpp \
-    libfswatch/c++/windows/win_paths.cpp \
-    libfswatch/c++/windows/win_directory_change_event.cpp \
-    libfswatch/c++/kqueue_monitor.cpp \
-    libfswatch/c++/libfswatch_exception.cpp \
-    libfswatch/c/libfswatch_log.cpp \
-    libfswatch/c/libfswatch.cpp \
-    libfswatch/c/cevent.cpp"
-  PHP_ADD_INCLUDE("PHP_EXT_BUILDDIR([openrasp])/libfswatch")
+  if test "$PHP_CLI_SUPPORT" != "no"; then
+    AC_DEFINE([HAVE_CLI_SUPPORT], [1], [Enable cli support])
+  fi
+
+  YAML_CPP_SOURCE="\
+    third_party/yaml-cpp/src/aliasmanager.cpp \
+    third_party/yaml-cpp/src/binary.cpp \
+    third_party/yaml-cpp/src/conversion.cpp \
+    third_party/yaml-cpp/src/directives.cpp \
+    third_party/yaml-cpp/src/emitfromevents.cpp \
+    third_party/yaml-cpp/src/emitter.cpp \
+    third_party/yaml-cpp/src/emitterstate.cpp \
+    third_party/yaml-cpp/src/emitterutils.cpp \
+    third_party/yaml-cpp/src/exp.cpp \
+    third_party/yaml-cpp/src/iterator.cpp \
+    third_party/yaml-cpp/src/node.cpp \
+    third_party/yaml-cpp/src/nodebuilder.cpp \
+    third_party/yaml-cpp/src/nodeownership.cpp \
+    third_party/yaml-cpp/src/null.cpp \
+    third_party/yaml-cpp/src/ostream.cpp \
+    third_party/yaml-cpp/src/parser.cpp \
+    third_party/yaml-cpp/src/regex.cpp \
+    third_party/yaml-cpp/src/scanner.cpp \
+    third_party/yaml-cpp/src/scanscalar.cpp \
+    third_party/yaml-cpp/src/scantag.cpp \
+    third_party/yaml-cpp/src/scantoken.cpp \
+    third_party/yaml-cpp/src/simplekey.cpp \
+    third_party/yaml-cpp/src/singledocparser.cpp \
+    third_party/yaml-cpp/src/stream.cpp \
+    third_party/yaml-cpp/src/tag.cpp \
+    third_party/yaml-cpp/src/contrib/graphbuilder.cpp \
+    third_party/yaml-cpp/src/contrib/graphbuilderadapter.cpp \
+  "
+  PHP_ADD_INCLUDE("PHP_EXT_BUILDDIR([openrasp])/third_party/yaml-cpp/include")
 
   case $host_os in
     darwin* )
@@ -349,17 +338,13 @@ if test "$PHP_OPENRASP" != "no"; then
       ;;
   esac
 
-  AC_MSG_CHECKING([for static libstdc++ library])
-  STATIC_LIBSTDCXX=`$CXX -print-file-name=libstdc++.a`
-  if test $STATIC_LIBSTDCXX == "libstdc++.a"; then
-    OPENRASP_LIBS="$OPENRASP_LIBS -lstdc++"
-    AC_MSG_RESULT([no])
-    AC_MSG_NOTICE([porting to other system may fail])
-  else
-    OPENRASP_LIBS="$OPENRASP_LIBS -Wl,$STATIC_LIBSTDCXX"
-    AC_MSG_RESULT([yes])
+  if test "$PHP_LINE_COVERAGE" != "no"; then
+    CFLAGS="$CFLAGS -fprofile-arcs -ftest-coverage"
+    CXXFLAGS="$CXXFLAGS -fprofile-arcs -ftest-coverage"
+    PHP_ADD_LIBRARY(gcov, , OPENRASP_SHARED_LIBADD)
+    AC_DEFINE([HAVE_LINE_COVERAGE], [1], [Enable line coverage support])
   fi
-
+  
   EXTRA_LIBS="$OPENRASP_LIBS $EXTRA_LIBS"
   OPENRASP_SHARED_LIBADD="$OPENRASP_LIBS $OPENRASP_SHARED_LIBADD"
   PHP_SUBST(OPENRASP_SHARED_LIBADD)
@@ -404,7 +389,7 @@ if test "$PHP_OPENRASP" != "no"; then
     CXXFLAGS=$old_CXXFLAGS
   ]);
 
-  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS $ac_cv_narrowing -std=$ac_cv_cstd -Wno-deprecated-declarations -Wno-write-strings -Wno-deprecated-register"
+  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS $ac_cv_narrowing -std=$ac_cv_cstd -Wno-deprecated-declarations -Wno-write-strings -Wno-deprecated-register -Wno-reserved-user-defined-literal"
   PHP_SUBST(EXTRA_CXXFLAGS)
 
   # AC_MSG_CHECKING([whether fully support regex])
@@ -672,27 +657,23 @@ int main() {
     hook/openrasp_mysql.cc \
     hook/openrasp_mysqli.cc \
     hook/openrasp_pgsql.cc \
+    hook/openrasp_pgsql_utils.cc \
     hook/openrasp_sqlite3.cc \
     hook/openrasp_pdo.cc \
     hook/openrasp_file.cc \
     hook/openrasp_ssrf.cc \
+    openrasp_output_detect.cc \
     hook/sql_connection_enrty.cc \
     hook/openrasp_echo.cc \
-    openrasp_config.cc \
+    hook/openrasp_putenv.cc \
     openrasp_conf_holder.cc \
     openrasp_config_block.cc \
     openrasp_inject.cc \
     openrasp_log.cc \
-    openrasp_shared_alloc.cc  \
-    openrasp_shared_alloc_mmap.cc  \
+    openrasp_error.cc \
     openrasp_v8.cc \
-    openrasp_v8_timeout_task.cc \
     openrasp_v8_request_context.cc \
     openrasp_v8_utils.cc \
-    openrasp_v8_snapshot.cc \
-    openrasp_v8_isolate.cc \
-    openrasp_v8_platform.cc \
-    openrasp_v8_exception.cc \
     openrasp_security_policy.cc \
     openrasp_ini.cc \
     utils/ReadWriteLock.cc \
@@ -700,13 +681,19 @@ int main() {
     utils/string.cc \
     utils/digest.cc \
     utils/regex.cc \
+    utils/debug_trace.cc \
+    utils/file.cc \  
     utils/time.cc \
     utils/net.cc \
+    utils/JsonReader.cc \
+    utils/YamlReader.cc \
+    utils/utf.cc \
     agent/base_manager.cc \
+    agent/shared_log_manager.cc \
     agent/shared_config_manager.cc \
     agent/mm/shm_manager.cc \
-    openrasp_fswatch.cc \
     $LIBFSWATCH_SOURCE \
+    $YAML_CPP_SOURCE \
     $OPENRASP_REMOTE_MANAGER_SOURCE \
     , $ext_shared)
   ifdef([PHP_ADD_EXTENSION_DEP],

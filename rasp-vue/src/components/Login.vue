@@ -14,7 +14,7 @@
               <label class="form-label">
                 用户名
               </label>
-              <input v-model="username" type="text" class="form-control">
+              <input v-model.trim="username" type="text" class="form-control">
             </div>
             <div class="form-group">
               <label class="form-label">
@@ -23,7 +23,7 @@
                   忘记密码?
                 </a>
               </label>
-              <input v-model="password" type="password" class="form-control" placeholder="输入密码">
+              <input v-model="password" type="password" class="form-control" placeholder="输入密码" autocomplete="off">
             </div>
             <div class="form-footer">
               <button type="submit" class="btn btn-primary btn-block" :plain="true" @click.prevent="doLogin()">

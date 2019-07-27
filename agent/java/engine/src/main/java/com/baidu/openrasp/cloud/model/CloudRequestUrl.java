@@ -16,7 +16,7 @@
 
 package com.baidu.openrasp.cloud.model;
 
-        import com.baidu.openrasp.config.Config;
+import com.baidu.openrasp.config.Config;
 
 public interface CloudRequestUrl {
     String cloudAddress = Config.getConfig().getCloudAddress();
@@ -25,5 +25,6 @@ public interface CloudRequestUrl {
     String CLOUD_ALARM_HTTP_APPENDER_URL = cloudAddress + "/v1/agent/log/attack";
     String CLOUD_POLICY_ALARM_HTTP_APPENDER_URL = cloudAddress + "/v1/agent/log/policy";
     String CLOUD_PLUGIN_HTTP_APPENDER_URL = cloudAddress + "/v1/agent/log/plugin";
+    String CLOUD_EXCEPTION_HTTP_APPENDER_URL = cloudAddress + "/v1/agent/log/error";
     String CLOUD_STATISTICS_REPORT_URL = cloudAddress + "/v1/agent/report";
 }

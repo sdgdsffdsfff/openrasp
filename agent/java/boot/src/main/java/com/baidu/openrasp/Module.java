@@ -26,8 +26,14 @@ import java.lang.instrument.Instrumentation;
  */
 public interface Module {
 
-    void start(String agentArg, Instrumentation inst) throws Exception;
+    String START_MODE_ATTACH = "attach";
+    String START_MODE_NORMAL = "normal";
 
-    void release();
+    String START_ACTION_INSTALL = "install";
+    String START_ACTION_UNINSTALL = "uninstall";
+
+    void start(String mode, Instrumentation inst) throws Throwable;
+
+    void release(String mode) throws Throwable;
 
 }

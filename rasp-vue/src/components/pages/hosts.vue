@@ -34,17 +34,36 @@
             <span class="input-icon-addon">
               <i class="fe fe-search" />
             </span>
-            <input v-model="hostname" type="text" class="form-control w-10" placeholder="搜索主机或者IP" @keyup.enter="loadRaspList(1)">
+            <input v-model.trim="hostname" type="text" class="form-control w-10" placeholder="搜索主机或者IP" @keyup.enter="loadRaspList(1)">
           </div>
 
           <button class="btn btn-primary ml-2" @click="loadRaspList(1)">
             搜索
+          </button>
+
+          <a class="btn btn-primary ml-2" v-bind:href="'/v1/api/rasp/csv?app_id=' + current_app.id" target="_blank">
+            导出
+          </a>
+
+          <button class="btn btn-info ml-2" @click="deleteExpired()">
+            清理
           </button>
         </div>
       </div>
       <div class="card">
         <div class="card-body">
           <vue-loading v-if="loading" type="spiningDubbles" color="rgb(90, 193, 221)" :size="{ width: '50px', height: '50px' }" />
+
+          <nav v-if="! loading && total > 0">
+            <ul class="pagination pull-left">
+              <li class="active">
+                <span style="margin-top: 0.5em; display: block; ">
+                  <strong>{{ total }}</strong> 结果，显示 {{ currentPage }} / {{ ceil(total / 10) }} 页
+                </span>
+              </li>
+            </ul>
+            <b-pagination v-model="currentPage" align="right" :total-rows="total" :per-page="10" @change="loadRaspList($event)" />
+          </nav>
 
           <table v-if="! loading" class="table table-hover table-bordered">
             <thead>
@@ -75,14 +94,14 @@
             <tbody>
               <tr v-for="row in data" :key="row.id">
                 <td>
-                  {{ row.hostname }}
+                  <a href="javascript:" @click="showHostDetail(row)">{{ row.hostname }}</a>
                 </td>
                 <td nowrap>
                   {{ row.register_ip }}
                 </td>
                 <td nowrap>
                   {{ row.language }}/{{ row.version }} <br>
-                  official/{{ row.plugin_version }}
+                  {{ row.plugin_name ? row.plugin_name : 'official' }}/{{ row.plugin_version }}
                 </td>
                 <td>
                   {{ row.rasp_home }}
@@ -100,28 +119,47 @@
                   </span>
                 </td>
                 <td nowrap>
-                  <a href="javascript:" @click="doDelete(row)">
+                  <a href="javascript:" v-if="! row.online" @click="doDelete(row)">
                     删除
                   </a>
+                  <span v-if="row.online">-</span>
                 </td>
               </tr>
             </tbody>
           </table>
-          <nav v-if="! loading">
-            <b-pagination v-model="currentPage" align="center" :total-rows="total" :per-page="10" @change="loadRaspList($event)" />
+
+          <p v-if="! loading && total == 0" class="text-center">
+暂无数据
+</p>
+
+          <nav v-if="! loading && total > 10">
+            <ul class="pagination pull-left">
+              <li class="active">
+                <span style="margin-top: 0.5em; display: block; ">
+                  <strong>{{ total }}</strong> 结果，显示 {{ currentPage }} / {{ ceil(total / 10) }} 页
+                </span>
+              </li>
+            </ul>
+            <b-pagination v-model="currentPage" align="right" :total-rows="total" :per-page="10" @change="loadRaspList($event)" />
           </nav>
-        </div>
+</div>
       </div>
     </div>
+
+    <HostDetailModal ref="showHostDetail" />
   </div>
 </template>
 
 <script>
-import { mapGetters } from 'vuex'
 import isIp from 'is-ip'
+import { mapGetters, mapActions, mapMutations } from 'vuex';
+import HostDetailModal from '@/components/modals/hostDetailModal'
 
 export default {
   name: 'Hosts',
+  components: {
+    HostDetailModal
+  },
   data: function() {
     return {
       data: [],
@@ -152,6 +190,10 @@ export default {
     this.loadRaspList(1)
   },
   methods: {
+    ceil: Math.ceil,
+    showHostDetail(data) {
+      this.$refs.showHostDetail.showModal(data)
+    },
     loadRaspList(page) {
       if (!this.filter.online && !this.filter.offline) {
         this.currentPage = page
@@ -192,14 +234,32 @@ export default {
       if (!confirm('确认删除? 删除前请先在主机端卸载 OpenRASP agent')) {
         return
       }
+      var self = this
       var body = {
-        id: data.id
+        id: data.id,
+        app_id: this.current_app.id
       }
 
       this.api_request('v1/api/rasp/delete', body, function(
         data
       ) {
-        this.loadRaspList()
+        self.loadRaspList(1)
+      })
+    },
+    deleteExpired: function() {
+      if (!confirm('删除离线超过7天的主机？')) {
+        return
+      }
+
+      var self = this
+      var body = {
+        app_id: this.current_app.id,
+        expire_time: 7 * 24 * 3600
+      }
+      this.api_request('v1/api/rasp/delete', body, function(
+        data
+      ) {
+        self.loadRaspList(1)
       })
     }
   }

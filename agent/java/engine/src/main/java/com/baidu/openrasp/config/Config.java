@@ -16,29 +16,32 @@
 
 package com.baidu.openrasp.config;
 
-import com.baidu.openrasp.HookHandler;
-import com.baidu.openrasp.cloud.utils.CloudUtils;
+import com.baidu.openrasp.cloud.model.ErrorType;
+import com.baidu.openrasp.cloud.model.HookWhiteModel;
 import com.baidu.openrasp.cloud.syslog.DynamicConfigAppender;
-import com.baidu.openrasp.exception.ConfigLoadException;
+import com.baidu.openrasp.cloud.utils.CloudUtils;
+import com.baidu.openrasp.exceptions.ConfigLoadException;
 import com.baidu.openrasp.messaging.LogConfig;
 import com.baidu.openrasp.plugin.checker.CheckParameter;
 import com.baidu.openrasp.tool.FileUtil;
 import com.baidu.openrasp.tool.LRUCache;
 import com.baidu.openrasp.tool.filemonitor.FileScanListener;
 import com.baidu.openrasp.tool.filemonitor.FileScanMonitor;
-import com.baidu.openrasp.cloud.model.HookWhiteModel;
 import com.fuxi.javaagent.contentobjects.jnotify.JNotifyException;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.TreeMap;
 
 
 /**
@@ -55,8 +58,9 @@ public class Config extends FileScanListener {
         REQUEST_PARAM_ENCODING("request.param_encoding", ""),
         BODY_MAX_BYTES("body.maxbytes", "4096"),
         LOG_MAX_STACK("log.maxstack", "50"),
+        LOG_MAX_BACKUP("log.maxbackup", "30"),
         REFLECTION_MAX_STACK("plugin.maxstack", "100"),
-        SQL_CACHE_CAPACITY("lru.max_size", "100"),
+        SQL_CACHE_CAPACITY("lru.max_size", "1024"),
         SECURITY_ENFORCE_POLICY("security.enforce_policy", "false"),
         PLUGIN_FILTER("plugin.filter", "true"),
         OGNL_EXPRESSION_MIN_LENGTH("ognl.expression.minlength", "30"),
@@ -79,8 +83,11 @@ public class Config extends FileScanListener {
         SYSLOG_FACILITY("syslog.facility", "1"),
         SYSLOG_RECONNECT_INTERVAL("syslog.reconnect_interval", "300000"),
         LOG_MAXBURST("log.maxburst", "100"),
-        HEARTBEAT_INTERVAL("cloud.heartbeat_interval", "180"),
-        HOOK_WHITE_ALL("hook.white.ALL", "true");
+        HEARTBEAT_INTERVAL("cloud.heartbeat_interval", "90"),
+        HOOK_WHITE("hook.white", ""),
+        HOOK_WHITE_ALL("hook.white.ALL", "true"),
+        DECOMPILE_ENABLE("decompile.enable", "false"),
+        RESPONSE_HEADERS("inject.custom_headers", "");
 
 
         Item(String key, String defaultValue) {
@@ -104,12 +111,15 @@ public class Config extends FileScanListener {
     }
 
     private static final String HOOKS_WHITE = "hook.white";
+    private static final String RESPONSE_HEADERS = "inject.custom_headers";
     private static final String CONFIG_DIR_NAME = "conf";
-    private static final String CONFIG_FILE_NAME = "rasp.properties";
+    private static final String CONFIG_FILE_NAME = "openrasp.yml";
     public static final int REFLECTION_STACK_START_INDEX = 0;
     public static final Logger LOGGER = Logger.getLogger(Config.class.getName());
     public static String baseDirectory;
     private static Integer watchId;
+    //全局lru的缓存
+    public static LRUCache<Object, String> commonLRUCache;
 
     private String configFileDir;
     private int pluginMaxStack;
@@ -145,6 +155,9 @@ public class Config extends FileScanListener {
     private int logMaxBurst;
     private int heartbeatInterval;
     private int syslogFacility;
+    private boolean decompileEnable;
+    private Map<String, String> responseHeaders;
+    private int logMaxBackUp;
 
 
     static {
@@ -152,6 +165,8 @@ public class Config extends FileScanListener {
         if (!getConfig().getCloudSwitch()) {
             CustomResponseHtml.load(baseDirectory);
         }
+        //初始化全局缓存
+        commonLRUCache = new LRUCache<Object, String>(getConfig().getSqlCacheCapacity());
         LOGGER.info("baseDirectory: " + baseDirectory);
     }
 
@@ -173,7 +188,7 @@ public class Config extends FileScanListener {
                 addConfigFileMonitor();
             }
         } catch (FileNotFoundException e) {
-            handleException("Could not find rasp.properties, using default settings: " + e.getMessage(), e);
+            handleException("Could not find openrasp.yml, using default settings: " + e.getMessage(), e);
         } catch (JNotifyException e) {
             handleException("add listener on " + configFileDir + " failed because:" + e.getMessage(), e);
         } catch (IOException e) {
@@ -181,17 +196,43 @@ public class Config extends FileScanListener {
         }
     }
 
+    @SuppressWarnings({"unchecked"})
     private synchronized void loadConfigFromFile(File file, boolean isInit) throws IOException {
-        Properties properties = new Properties();
+        Map<String, Object> properties = null;
         try {
             if (file.exists()) {
-                FileInputStream input = new FileInputStream(file);
-                properties.load(input);
-                input.close();
+                Yaml yaml = new Yaml();
+                properties = yaml.loadAs(new FileInputStream(file), Map.class);
             }
+        } catch (Exception e) {
+            String message = "openrasp.yml parsing failed";
+            int errorCode = ErrorType.CONFIG_ERROR.getCode();
+            LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
         } finally {
+            TreeMap<String, Integer> temp = new TreeMap<String, Integer>();
             // 出现解析问题使用默认值
-            for (Item item : Item.values()) {
+            for (Config.Item item : Config.Item.values()) {
+                if (item.key.equals(HOOKS_WHITE)) {
+                    if (properties != null) {
+                        Object object = properties.get(item.key);
+                        if (object instanceof Map) {
+                            Map<String, Object> hooks = (Map<String, Object>) object;
+                            temp.putAll(parseHookWhite(hooks));
+                        }
+                    }
+                    HookWhiteModel.init(temp);
+                    continue;
+                }
+                if (item.key.equals(RESPONSE_HEADERS)) {
+                    if (properties != null) {
+                        Object object = properties.get(item.key);
+                        if (object instanceof Map) {
+                            Map<String, String> headers = (Map<String, String>) object;
+                            setResponseHeaders(headers);
+                        }
+                    }
+                    continue;
+                }
                 if (item.isProperties) {
                     setConfigFromProperties(item, properties, isInit);
                 }
@@ -199,49 +240,23 @@ public class Config extends FileScanListener {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public synchronized void loadConfigFromCloud(Map<String, Object> configMap, boolean isInit) {
         TreeMap<String, Integer> temp = new TreeMap<String, Integer>();
         for (Map.Entry<String, Object> entry : configMap.entrySet()) {
+            //开启云控必须参数不能云控
+            if (entry.getKey().startsWith("cloud.")) {
+                continue;
+            }
             if (entry.getKey().equals(HOOKS_WHITE)) {
                 if (entry.getValue() instanceof JsonObject) {
                     Map<String, Object> hooks = CloudUtils.getMapGsonObject().fromJson((JsonObject) entry.getValue(), Map.class);
-                    for (Map.Entry<String, Object> hook : hooks.entrySet()) {
-                        int codeSum = 0;
-                        if (hook.getValue() instanceof ArrayList) {
-                            ArrayList<String> types = (ArrayList<String>) hook.getValue();
-                            if (hook.getKey().equals("*") && types.contains("all")) {
-                                for (CheckParameter.Type type : CheckParameter.Type.values()) {
-                                    if (type.getCode() != 0) {
-                                        codeSum = codeSum + type.getCode();
-                                    }
-                                }
-                                temp.put("", codeSum);
-                                return;
-                            } else if (types.contains("all")) {
-                                for (CheckParameter.Type type : CheckParameter.Type.values()) {
-                                    if (type.getCode() != 0) {
-                                        codeSum = codeSum + type.getCode();
-                                    }
-                                }
-                                temp.put(hook.getKey(), codeSum);
-                            } else {
-                                for (String s : types) {
-                                    String hooksType = s.toUpperCase();
-                                    try {
-                                        Integer code = CheckParameter.Type.valueOf(hooksType).getCode();
-                                        codeSum = codeSum + code;
-                                    } catch (Exception e) {
-                                        LOGGER.warn("Hook type " + s + " does not exist: ", e);
-                                    }
-                                }
-                                if (hook.getKey().equals("*")) {
-                                    temp.put("", codeSum);
-                                } else {
-                                    temp.put(hook.getKey(), codeSum);
-                                }
-                            }
-                        }
-                    }
+                    temp.putAll(parseHookWhite(hooks));
+                }
+            } else if (entry.getKey().equals(RESPONSE_HEADERS)) {
+                if (entry.getValue() instanceof JsonObject) {
+                    Map<String, String> headers = CloudUtils.getMapGsonObject().fromJson((JsonObject) entry.getValue(), Map.class);
+                    setResponseHeaders(headers);
                 }
             } else {
                 if (entry.getValue() instanceof JsonPrimitive) {
@@ -258,11 +273,21 @@ public class Config extends FileScanListener {
                 loadConfigFromFile(file, false);
                 //单机模式下动态添加获取删除syslog和动态更新syslog tag
                 if (!CloudUtils.checkCloudControlEnter()) {
+                    //关闭或者打开syslog服务
                     LogConfig.syslogManager();
+                    //更新syslog tag标志
                     DynamicConfigAppender.updateSyslogTag();
+                    //是否开启log4j的debug
+                    DynamicConfigAppender.enableDebug();
+                    //更新log4j的日志限速
+                    DynamicConfigAppender.fileAppenderAddBurstFilter();
+                    //更新log4j的日志最大备份天数
+                    DynamicConfigAppender.setLogMaxBackup();
                 }
             } catch (IOException e) {
-                LOGGER.warn("update rasp.properties failed because: " + e.getMessage());
+                String message = "update openrasp.yml failed";
+                int errorCode = ErrorType.CONFIG_ERROR.getCode();
+                LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
             }
         }
     }
@@ -289,21 +314,30 @@ public class Config extends FileScanListener {
         });
     }
 
-    private void setConfigFromProperties(Item item, Properties properties, boolean isInit) {
+    private void setConfigFromProperties(Config.Item item, Map<String, Object> properties, boolean isInit) {
         String key = item.key;
-        String value = properties.getProperty(item.key, item.defaultValue);
+        String value = item.defaultValue;
+        if (properties != null) {
+            Object object = properties.get(item.key);
+            if (object != null) {
+                value = String.valueOf(object);
+            }
+        }
         try {
             setConfig(key, value, isInit);
         } catch (Exception e) {
             // 出现解析问题使用默认值
             value = item.defaultValue;
             setConfig(key, item.defaultValue, false);
-            LOGGER.warn("set config " + item.key + " failed, use default value : " + value);
+            String message = "set config " + item.key + " failed, use default value : " + value;
+            int errorCode = ErrorType.CONFIG_ERROR.getCode();
+            LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
         }
     }
 
     private void handleException(String message, Exception e) {
-        LOGGER.warn(message);
+        int errorCode = ErrorType.CONFIG_ERROR.getCode();
+        LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
         System.out.println(message);
     }
 
@@ -380,7 +414,9 @@ public class Config extends FileScanListener {
                 reloadConfig(new File(configFileDir + File.separator + CONFIG_FILE_NAME));
             }
         } catch (Exception e) {
-            LOGGER.warn("update " + directory.getAbsolutePath() + " failed because: " + e.getMessage());
+            String message = "update " + directory.getAbsolutePath() + " failed";
+            int errorCode = ErrorType.CONFIG_ERROR.getCode();
+            LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
         }
     }
 
@@ -391,7 +427,7 @@ public class Config extends FileScanListener {
      *
      * @return 超时时间
      */
-    public synchronized long getPluginTimeout() {
+    public long getPluginTimeout() {
         return pluginTimeout;
     }
 
@@ -402,8 +438,8 @@ public class Config extends FileScanListener {
      */
     public synchronized void setPluginTimeout(String pluginTimeout) {
         this.pluginTimeout = Long.parseLong(pluginTimeout);
-        if (this.pluginTimeout < 0) {
-            this.pluginTimeout = 0;
+        if (this.pluginTimeout <= 0) {
+            this.pluginTimeout = 100;
         }
     }
 
@@ -412,7 +448,7 @@ public class Config extends FileScanListener {
      *
      * @return 页面path前缀
      */
-    public synchronized String getInjectUrlPrefix() {
+    public String getInjectUrlPrefix() {
         return injectUrlPrefix;
     }
 
@@ -434,7 +470,7 @@ public class Config extends FileScanListener {
      *
      * @return 最大长度
      */
-    public synchronized int getBodyMaxBytes() {
+    public int getBodyMaxBytes() {
         return bodyMaxBytes;
     }
 
@@ -445,12 +481,12 @@ public class Config extends FileScanListener {
      */
     public synchronized void setBodyMaxBytes(String bodyMaxBytes) {
         this.bodyMaxBytes = Integer.parseInt(bodyMaxBytes);
-        if (this.bodyMaxBytes < 0) {
-            this.bodyMaxBytes = 0;
+        if (this.bodyMaxBytes <= 0) {
+            this.bodyMaxBytes = 4096;
         }
     }
 
-    public synchronized int getSqlSlowQueryMinCount() {
+    public int getSqlSlowQueryMinCount() {
         return sqlSlowQueryMinCount;
     }
 
@@ -466,7 +502,7 @@ public class Config extends FileScanListener {
      *
      * @return 需要忽略的挂钩点列表
      */
-    public synchronized String[] getIgnoreHooks() {
+    public String[] getIgnoreHooks() {
         return this.ignoreHooks;
     }
 
@@ -484,7 +520,7 @@ public class Config extends FileScanListener {
      *
      * @return 栈信息最大深度
      */
-    public synchronized int getPluginMaxStack() {
+    public int getPluginMaxStack() {
         return pluginMaxStack;
     }
 
@@ -496,7 +532,7 @@ public class Config extends FileScanListener {
     public synchronized void setPluginMaxStack(String pluginMaxStack) {
         this.pluginMaxStack = Integer.parseInt(pluginMaxStack);
         if (this.pluginMaxStack < 0) {
-            this.pluginMaxStack = 0;
+            this.pluginMaxStack = 100;
         }
     }
 
@@ -505,7 +541,7 @@ public class Config extends FileScanListener {
      *
      * @return 需要监控的反射方法
      */
-    public synchronized String[] getReflectionMonitorMethod() {
+    public String[] getReflectionMonitorMethod() {
         return reflectionMonitorMethod;
     }
 
@@ -523,7 +559,7 @@ public class Config extends FileScanListener {
      *
      * @return 拦截页面url
      */
-    public synchronized String getBlockUrl() {
+    public String getBlockUrl() {
         return blockUrl;
     }
 
@@ -541,7 +577,7 @@ public class Config extends FileScanListener {
      *
      * @return
      */
-    public synchronized int getLogMaxStackSize() {
+    public int getLogMaxStackSize() {
         return logMaxStackSize;
     }
 
@@ -553,7 +589,7 @@ public class Config extends FileScanListener {
     public synchronized void setLogMaxStackSize(String logMaxStackSize) {
         this.logMaxStackSize = Integer.parseInt(logMaxStackSize);
         if (this.logMaxStackSize < 0) {
-            this.logMaxStackSize = 0;
+            this.logMaxStackSize = 50;
         }
     }
 
@@ -562,7 +598,7 @@ public class Config extends FileScanListener {
      *
      * @return ognl表达式最短长度
      */
-    public synchronized int getOgnlMinLength() {
+    public int getOgnlMinLength() {
         return ognlMinLength;
     }
 
@@ -573,8 +609,8 @@ public class Config extends FileScanListener {
      */
     public synchronized void setOgnlMinLength(String ognlMinLength) {
         this.ognlMinLength = Integer.parseInt(ognlMinLength);
-        if (this.ognlMinLength < 0) {
-            this.ognlMinLength = 0;
+        if (this.ognlMinLength <= 0) {
+            this.ognlMinLength = 30;
         }
     }
 
@@ -585,7 +621,7 @@ public class Config extends FileScanListener {
      *
      * @return true开启，false关闭
      */
-    public synchronized boolean getEnforcePolicy() {
+    public boolean getEnforcePolicy() {
         return enforcePolicy;
     }
 
@@ -603,7 +639,7 @@ public class Config extends FileScanListener {
      *
      * @return 状态码
      */
-    public synchronized int getBlockStatusCode() {
+    public int getBlockStatusCode() {
         return blockStatusCode;
     }
 
@@ -625,7 +661,7 @@ public class Config extends FileScanListener {
      *
      * @return debugLevel 级别
      */
-    public synchronized int getDebugLevel() {
+    public int getDebugLevel() {
         return debugLevel;
     }
 
@@ -659,7 +695,7 @@ public class Config extends FileScanListener {
      *
      * @return 配置的 json 对象
      */
-    public synchronized JsonObject getAlgorithmConfig() {
+    public JsonObject getAlgorithmConfig() {
         return algorithmConfig;
     }
 
@@ -677,7 +713,7 @@ public class Config extends FileScanListener {
      *
      * @return 请求参数编码
      */
-    public synchronized String getRequestParamEncoding() {
+    public String getRequestParamEncoding() {
         return requestParamEncoding;
     }
 
@@ -699,7 +735,7 @@ public class Config extends FileScanListener {
      *
      * @return 返回contentType类型
      */
-    public synchronized String getBlockJson() {
+    public String getBlockJson() {
         return blockJson;
     }
 
@@ -718,7 +754,7 @@ public class Config extends FileScanListener {
      *
      * @return 返回contentType类型
      */
-    public synchronized String getBlockXml() {
+    public String getBlockXml() {
         return blockXml;
     }
 
@@ -737,7 +773,7 @@ public class Config extends FileScanListener {
      *
      * @return 返回contentType类型
      */
-    public synchronized String getBlockHtml() {
+    public String getBlockHtml() {
         return blockHtml;
     }
 
@@ -756,7 +792,7 @@ public class Config extends FileScanListener {
      *
      * @return 返回是否进入插件
      */
-    public synchronized boolean getPluginFilter() {
+    public boolean getPluginFilter() {
         return pluginFilter;
     }
 
@@ -775,7 +811,7 @@ public class Config extends FileScanListener {
      *
      * @return 返回请求头
      */
-    public synchronized String getClientIp() {
+    public String getClientIp() {
         return clientIp;
     }
 
@@ -793,7 +829,7 @@ public class Config extends FileScanListener {
      *
      * @return 缓存的大小
      */
-    public synchronized int getSqlCacheCapacity() {
+    public int getSqlCacheCapacity() {
         return sqlCacheCapacity;
     }
 
@@ -804,12 +840,16 @@ public class Config extends FileScanListener {
      */
     public synchronized void setSqlCacheCapacity(String sqlCacheCapacity) {
         this.sqlCacheCapacity = Integer.parseInt(sqlCacheCapacity);
-        if (this.sqlCacheCapacity <= 0) {
-            this.sqlCacheCapacity = 0;
+        if (this.sqlCacheCapacity < 0) {
+            this.sqlCacheCapacity = 1024;
         }
-        if (HookHandler.commonLRUCache.maxSize() != this.sqlCacheCapacity) {
-            HookHandler.commonLRUCache.clear();
-            HookHandler.commonLRUCache = new LRUCache<String, String>(this.sqlCacheCapacity);
+        if (Config.commonLRUCache == null || Config.commonLRUCache.maxSize() != this.sqlCacheCapacity) {
+            if (Config.commonLRUCache == null) {
+                Config.commonLRUCache = new LRUCache<Object, String>(this.sqlCacheCapacity);
+            } else {
+                Config.commonLRUCache.clear();
+                Config.commonLRUCache = new LRUCache<Object, String>(this.sqlCacheCapacity);
+            }
         }
     }
 
@@ -818,7 +858,7 @@ public class Config extends FileScanListener {
      *
      * @return syslog开关状态
      */
-    public synchronized boolean getSyslogSwitch() {
+    public boolean getSyslogSwitch() {
         return syslogSwitch;
     }
 
@@ -836,7 +876,7 @@ public class Config extends FileScanListener {
      *
      * @return syslog上传日志的地址
      */
-    public synchronized String getSyslogUrl() {
+    public String getSyslogUrl() {
         return syslogUrl;
     }
 
@@ -854,7 +894,7 @@ public class Config extends FileScanListener {
      *
      * @return syslog的layout中的tag字段信息
      */
-    public synchronized String getSyslogTag() {
+    public String getSyslogTag() {
         return syslogTag;
     }
 
@@ -872,7 +912,7 @@ public class Config extends FileScanListener {
      *
      * @return syslog的facility字段信息
      */
-    public synchronized int getSyslogFacility() {
+    public int getSyslogFacility() {
         return syslogFacility;
     }
 
@@ -893,7 +933,7 @@ public class Config extends FileScanListener {
      *
      * @return syslog的重连时间
      */
-    public synchronized int getSyslogReconnectInterval() {
+    public int getSyslogReconnectInterval() {
         return syslogReconnectInterval;
     }
 
@@ -904,7 +944,7 @@ public class Config extends FileScanListener {
      */
     public synchronized void setSyslogReconnectInterval(String syslogReconnectInterval) {
         this.syslogReconnectInterval = Integer.parseInt(syslogReconnectInterval);
-        if (this.syslogReconnectInterval < 0) {
+        if (this.syslogReconnectInterval <= 0) {
             this.syslogReconnectInterval = 300000;
         }
     }
@@ -914,7 +954,7 @@ public class Config extends FileScanListener {
      *
      * @return 日志每分钟上传的条数
      */
-    public synchronized int getLogMaxBurst() {
+    public int getLogMaxBurst() {
         return logMaxBurst;
     }
 
@@ -935,7 +975,7 @@ public class Config extends FileScanListener {
      *
      * @return 是否禁用全部hook点
      */
-    public synchronized boolean getHookWhiteAll() {
+    public boolean getHookWhiteAll() {
         return hookWhiteAll;
     }
 
@@ -953,7 +993,7 @@ public class Config extends FileScanListener {
      *
      * @return 云控开关状态
      */
-    public synchronized boolean getCloudSwitch() {
+    public boolean getCloudSwitch() {
         return cloudSwitch;
     }
 
@@ -971,7 +1011,7 @@ public class Config extends FileScanListener {
      *
      * @return 返回云控地址
      */
-    public synchronized String getCloudAddress() {
+    public String getCloudAddress() {
         return cloudAddress;
     }
 
@@ -989,7 +1029,7 @@ public class Config extends FileScanListener {
      *
      * @return 云控的请求的appid
      */
-    public synchronized String getCloudAppId() {
+    public String getCloudAppId() {
         return cloudAppId;
     }
 
@@ -1007,7 +1047,7 @@ public class Config extends FileScanListener {
      *
      * @return 云控的请求的appSecret
      */
-    public synchronized String getCloudAppSecret() {
+    public String getCloudAppSecret() {
         return cloudAppSecret;
     }
 
@@ -1025,7 +1065,7 @@ public class Config extends FileScanListener {
      *
      * @return 云控的心跳请求间隔
      */
-    public synchronized int getHeartbeatInterval() {
+    public int getHeartbeatInterval() {
         return heartbeatInterval;
     }
 
@@ -1038,6 +1078,63 @@ public class Config extends FileScanListener {
         this.heartbeatInterval = Integer.parseInt(heartbeatInterval);
         if (!(this.heartbeatInterval >= 60 && this.heartbeatInterval <= 1800)) {
             this.heartbeatInterval = 180;
+        }
+    }
+
+    /**
+     * 获取java反编译的开关状态
+     *
+     * @return java反编译的开关状态
+     */
+    public boolean getDecompileEnable() {
+        return decompileEnable;
+    }
+
+    /**
+     * 设置java反编译的开关状态
+     *
+     * @param decompileEnable 待设置java反编译的开关状态
+     */
+    public synchronized void setDecompileEnable(String decompileEnable) {
+        this.decompileEnable = Boolean.parseBoolean(decompileEnable);
+    }
+
+    /**
+     * 获取response header数组
+     *
+     * @return response header数组
+     */
+    public Map<String, String> getResponseHeaders() {
+        return responseHeaders;
+    }
+
+    /**
+     * 设置response header数组
+     *
+     * @param responseHeaders 待设置response header数组
+     */
+    public synchronized void setResponseHeaders(Map<String, String> responseHeaders) {
+        this.responseHeaders = responseHeaders;
+    }
+
+    /**
+     * 获取log4j最大日志备份天数
+     *
+     * @return log4j最大日志备份天数
+     */
+    public int getLogMaxBackUp() {
+        return logMaxBackUp;
+    }
+
+    /**
+     * 设置log4j最大日志备份天数,默认30天
+     *
+     * @param logMaxBackUp log4j最大日志备份天数
+     */
+    public synchronized void setLogMaxBackUp(String logMaxBackUp) {
+        this.logMaxBackUp = Integer.parseInt(logMaxBackUp) + 1;
+        if (this.logMaxBackUp <= 0) {
+            this.logMaxBackUp = 30;
         }
     }
 
@@ -1111,12 +1208,14 @@ public class Config extends FileScanListener {
                 setSyslogFacility(value);
             } else if (Item.SYSLOG_RECONNECT_INTERVAL.key.equals(key)) {
                 setSyslogReconnectInterval(value);
-            } else if (Item.HOOK_WHITE_ALL.key.equals(key)) {
-                setHookWhiteAll(value);
             } else if (Item.LOG_MAXBURST.key.equals(key)) {
                 setLogMaxBurst(value);
             } else if (Item.HEARTBEAT_INTERVAL.key.equals(key)) {
                 setHeartbeatInterval(value);
+            } else if (Item.DECOMPILE_ENABLE.key.equals(key)) {
+                setDecompileEnable(value);
+            } else if (Item.LOG_MAX_BACKUP.key.equals(key)) {
+                setLogMaxBackUp(value);
             } else {
                 isHit = false;
             }
@@ -1141,4 +1240,50 @@ public class Config extends FileScanListener {
         return true;
     }
 
+    private TreeMap<String, Integer> parseHookWhite(Map<String, Object> hooks) {
+        TreeMap<String, Integer> temp = new TreeMap<String, Integer>();
+        for (Map.Entry<String, Object> hook : hooks.entrySet()) {
+            int codeSum = 0;
+            if (hook.getValue() instanceof ArrayList) {
+                @SuppressWarnings("unchecked")
+                ArrayList<String> types = (ArrayList<String>) hook.getValue();
+                if (hook.getKey().equals("*") && types.contains("all")) {
+                    for (CheckParameter.Type type : CheckParameter.Type.values()) {
+                        if (type.getCode() != 0) {
+                            codeSum = codeSum + type.getCode();
+                        }
+                    }
+                    temp.put("", codeSum);
+                    return temp;
+                } else if (types.contains("all")) {
+                    for (CheckParameter.Type type : CheckParameter.Type.values()) {
+                        if (type.getCode() != 0) {
+                            codeSum = codeSum + type.getCode();
+                        }
+                    }
+                    temp.put(hook.getKey(), codeSum);
+                } else {
+                    for (String s : types) {
+                        String hooksType = s.toUpperCase();
+                        try {
+                            Integer code = CheckParameter.Type.valueOf(hooksType).getCode();
+                            codeSum = codeSum + code;
+                        } catch (Exception e) {
+                            if (Config.getConfig().isDebugEnabled()) {
+                                String message = "Hook type " + s + " does not exist";
+                                int errorCode = ErrorType.CONFIG_ERROR.getCode();
+                                LOGGER.warn(CloudUtils.getExceptionObject(message, errorCode), e);
+                            }
+                        }
+                    }
+                    if (hook.getKey().equals("*")) {
+                        temp.put("", codeSum);
+                    } else {
+                        temp.put(hook.getKey(), codeSum);
+                    }
+                }
+            }
+        }
+        return temp;
+    }
 }

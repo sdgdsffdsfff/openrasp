@@ -17,8 +17,9 @@
 package com.baidu.rasp.install;
 
 import com.baidu.rasp.RaspError;
+import org.apache.commons.io.IOUtils;
 
-import java.io.File;
+import java.io.*;
 
 import static com.baidu.rasp.RaspError.E10002;
 import static com.baidu.rasp.RaspError.E10004;
@@ -31,6 +32,9 @@ public abstract class InstallerFactory {
     protected static final String TOMCAT = "Tomcat";
     protected static final String JBOSS = "JBoss 4-6";
     protected static final String RESIN = "Resin";
+    protected static final String WEBLOGIC = "Weblogic";
+    protected static final String JBOSSEAP = "JbossEAP";
+    protected static final String WILDFLY = "Wildfly";
 
     protected abstract Installer getInstaller(String serverName, String serverRoot);
 
@@ -44,6 +48,9 @@ public abstract class InstallerFactory {
             System.out.println("List of currently supported servers are:");
             System.out.println("- " + TOMCAT);
             System.out.println("- " + RESIN);
+            System.out.println("- " + WEBLOGIC);
+            System.out.println("- " + JBOSSEAP);
+            System.out.println("- " + WILDFLY);
             System.out.println("- " + JBOSS + "\n");
             throw new RaspError(E10004 + serverRoot.getPath());
         }
@@ -67,6 +74,48 @@ public abstract class InstallerFactory {
                 || new File(serverRoot, "bin/resin.sh").exists()) {
             return RESIN;
         }
+        if (new File(serverRoot, "bin/startWebLogic.sh").exists()
+                || new File(serverRoot, "bin/startWebLogic.bat").exists()) {
+            return WEBLOGIC;
+        }
+        if (new File(serverRoot, "bin/standalone.sh").exists()
+                || new File(serverRoot, "bin/standalone.bat").exists()) {
+            try {
+                return isWildfly(serverRoot) ? WILDFLY : JBOSSEAP;
+            } catch (Exception e) {
+                return null;
+            }
+        }
         return null;
+    }
+
+    public static boolean isWildfly(String serverRoot) throws Exception {
+        File dir = new File(serverRoot + File.separator + "bin" + File.separator + "init.d");
+        if (dir.exists() && dir.isDirectory()) {
+            File[] files = dir.listFiles(new FileFilter() {
+                @Override
+                public boolean accept(File file) {
+                    return file.getName().contains("wildfly");
+                }
+            });
+            return files != null && files.length > 0;
+        } else {
+            return detectWildfly(serverRoot);
+        }
+    }
+
+    private static boolean detectWildfly(String severRoot) throws Exception {
+        File baseDir = new File(severRoot);
+        if (baseDir.exists() && baseDir.isDirectory()) {
+            String path;
+            try {
+                path = baseDir.getCanonicalPath() + File.separator + "README.txt";
+            } catch (IOException e) {
+                path = baseDir.getAbsolutePath() + File.separator + "README.txt";
+            }
+            String content = IOUtils.toString(new FileReader(new File(path)));
+            return content != null && content.toLowerCase().contains("wildfly");
+        }
+        return false;
     }
 }

@@ -42,9 +42,12 @@ int include_or_eval_handler(zend_execute_data *execute_data)
 int eval_handler(zend_execute_data *execute_data)
 {
     const zend_op *opline = EX(opline);
+#if (PHP_MINOR_VERSION < 3)
     zval *inc_filename = zend_get_zval_ptr(opline->op1_type, &opline->op1, execute_data, &should_free, BP_VAR_IS);
+#else
+    zval *inc_filename = zend_get_zval_ptr(opline, opline->op1_type, &opline->op1, execute_data, &should_free, BP_VAR_IS);
+#endif
     if (inc_filename != nullptr &&
-        opline->op1_type == IS_VAR &&
         !openrasp_check_type_ignored(WEBSHELL_EVAL) &&
         openrasp_zval_in_request(inc_filename))
     {
@@ -65,7 +68,11 @@ int include_handler(zend_execute_data *execute_data)
     zval params, tmp_inc_filename, *inc_filename, *document_root;
     ZVAL_NULL(&tmp_inc_filename);
     std::string real_path;
+#if (PHP_MINOR_VERSION < 3)
     inc_filename = zend_get_zval_ptr(opline->op1_type, &opline->op1, execute_data, &should_free, BP_VAR_IS);
+#else
+    inc_filename = zend_get_zval_ptr(opline, opline->op1_type, &opline->op1, execute_data, &should_free, BP_VAR_IS);
+#endif
     const char *scheme_end = nullptr;
     bool send_to_plugin = false;
     if (inc_filename == nullptr)
@@ -83,7 +90,7 @@ int include_handler(zend_execute_data *execute_data)
         convert_to_string(&tmp_inc_filename);
         inc_filename = &tmp_inc_filename;
     }
-    if ((Z_STRVAL_P(inc_filename) && (scheme_end = fetch_url_scheme(Z_STRVAL_P(inc_filename))) != nullptr) ||
+    if ((nullptr != Z_STRVAL_P(inc_filename) && (scheme_end = fetch_url_scheme(Z_STRVAL_P(inc_filename))) != nullptr) ||
         (strlen(Z_STRVAL_P(inc_filename)) < 4 || (strcmp(Z_STRVAL_P(inc_filename) + Z_STRLEN_P(inc_filename) - 4, ".php") &&
                                                   strcmp(Z_STRVAL_P(inc_filename) + Z_STRLEN_P(inc_filename) - 4, ".inc"))))
     {
@@ -97,8 +104,7 @@ int include_handler(zend_execute_data *execute_data)
     {
         send_to_plugin = true;
     }
-    if (Z_TYPE(PG(http_globals)[TRACK_VARS_SERVER]) != IS_ARRAY &&
-        !zend_is_auto_global_str(ZEND_STRL("_SERVER")))
+    if (Z_TYPE(PG(http_globals)[TRACK_VARS_SERVER]) != IS_ARRAY && !zend_is_auto_global_str(ZEND_STRL("_SERVER")))
     {
         send_to_plugin = true;
     }
@@ -122,7 +128,7 @@ int include_handler(zend_execute_data *execute_data)
 
     {
         openrasp::Isolate *isolate = OPENRASP_V8_G(isolate);
-        bool is_block = false;
+        openrasp::CheckResult check_result = openrasp::CheckResult::kCache;
         if (!send_to_plugin || !isolate)
         {
             goto DISPATCH;
@@ -134,27 +140,28 @@ int include_handler(zend_execute_data *execute_data)
             params->Set(openrasp::NewV8String(isolate, "path"), path);
             params->Set(openrasp::NewV8String(isolate, "url"), path);
             params->Set(openrasp::NewV8String(isolate, "realpath"), openrasp::NewV8String(isolate, real_path));
+            std::string function;
             switch (opline->extended_value)
             {
             case ZEND_INCLUDE:
-                params->Set(openrasp::NewV8String(isolate, "function"), openrasp::NewV8String(isolate, "include"));
+                function = "include";
                 break;
             case ZEND_INCLUDE_ONCE:
-                params->Set(openrasp::NewV8String(isolate, "function"), openrasp::NewV8String(isolate, "include_once"));
+                function = "include_once";
                 break;
             case ZEND_REQUIRE:
-                params->Set(openrasp::NewV8String(isolate, "function"), openrasp::NewV8String(isolate, "require"));
+                function = "require";
                 break;
             case ZEND_REQUIRE_ONCE:
-                params->Set(openrasp::NewV8String(isolate, "function"), openrasp::NewV8String(isolate, "require_once"));
+                function = "require_once";
                 break;
             default:
-                params->Set(openrasp::NewV8String(isolate, "function"), openrasp::NewV8String(isolate, ""));
                 break;
             }
-            is_block = isolate->Check(openrasp::NewV8String(isolate, get_check_type_name(INCLUDE)), params, OPENRASP_CONFIG(plugin.timeout.millis));
+            params->Set(openrasp::NewV8String(isolate, "function"), openrasp::NewV8String(isolate, function));
+            check_result = Check(isolate, openrasp::NewV8String(isolate, get_check_type_name(INCLUDE)), params, OPENRASP_CONFIG(plugin.timeout.millis));
         }
-        if (is_block)
+        if (check_result == openrasp::CheckResult::kBlock)
         {
             handle_block();
         }

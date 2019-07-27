@@ -16,6 +16,7 @@
 
 package com.baidu.openrasp.tool;
 
+import com.baidu.openrasp.HookHandler;
 import com.baidu.openrasp.config.Config;
 import com.baidu.openrasp.tool.model.NicModel;
 import org.apache.commons.io.IOUtils;
@@ -144,7 +145,7 @@ public class OSUtil {
     public static String getMasterIp(String requestUrl) throws Exception {
         URL url = new URL(requestUrl);
         Socket socket = new Socket();
-        socket.connect(new InetSocketAddress(url.getHost(), getPort(url)), 2000);
+        socket.connect(new InetSocketAddress(url.getHost(), getPort(url)), 10000);
         String ip = socket.getLocalAddress().getHostAddress();
         return ip != null ? ip : "";
     }
@@ -163,10 +164,13 @@ public class OSUtil {
 
     private static String execReadToString() {
         try {
+            HookHandler.enableCmdHook.set(false);
             InputStream in = Runtime.getRuntime().exec("hostname").getInputStream();
             return IOUtils.toString(in);
         } catch (Exception e) {
             return "im-not-resolvable";
+        } finally {
+            HookHandler.enableCmdHook.set(true);
         }
     }
 

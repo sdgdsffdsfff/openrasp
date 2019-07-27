@@ -45,9 +45,6 @@ BackendRequest::~BackendRequest()
 
 std::shared_ptr<BackendResponse> BackendRequest::curl_perform()
 {
-    TS_FETCH_WRAPPER();
-    std::string req_msg = "URL: " + url + "\nbody: " + (post_data ? (post_data) : "");
-    LOG_G(rasp_logger).log(LEVEL_DEBUG, req_msg.c_str(), req_msg.length() TSRMLS_CC);
     if (curl)
     {
         long response_code;
@@ -71,12 +68,15 @@ std::shared_ptr<BackendResponse> BackendRequest::curl_perform()
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &(response_string));
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &(header_string));
+#if LIBCURL_VERSION_NUM < 0x071506
+        curl_easy_setopt(curl, CURLOPT_ENCODING, "");
+#else
+        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+#endif
         curl_code = curl_easy_perform(curl);
         if (CURLE_OK == curl_code)
         {
             curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &(response_code));
-            std::string res_msg = "Response_code: " + std::to_string(response_code) + "\nheader_string: " + header_string + "body:" + response_string;
-            LOG_G(rasp_logger).log(LEVEL_DEBUG, res_msg.c_str(), res_msg.length() TSRMLS_CC);
             return make_shared<BackendResponse>(response_code, header_string, response_string);
         }
     }
@@ -87,4 +87,10 @@ CURLcode BackendRequest::get_curl_code() const
 {
     return curl_code;
 }
+
+const char *BackendRequest::get_curl_err_msg() const
+{
+    return curl_easy_strerror(curl_code);
+}
+
 } // namespace openrasp

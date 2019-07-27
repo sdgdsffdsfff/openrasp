@@ -152,8 +152,6 @@ typedef enum action_type_t
     AC_BLOCK = 1 << 1
 } OpenRASPActionType;
 
-extern const std::map<OpenRASPCheckType, const std::string> CheckTypeNameMap;
-
 enum PATH_OPERATION
 {
     OPENDIR = 1 << 0,
@@ -165,48 +163,8 @@ enum PATH_OPERATION
     SIMULTANEOUSRW = 1 << 6
 };
 
-class SqlConnectionEntry
-{
-  private:
-    std::string connection_string;
-    std::string server;
-    std::string host;
-    std::string username;
-    std::string socket;
-    int port = 0;
-    bool using_socket = true;
-
-  public:
-    void set_connection_string(std::string connection_string);
-    std::string get_connection_string() const;
-
-    void set_server(std::string server);
-    std::string get_server() const;
-
-    void set_host(std::string host);
-    std::string get_host() const;
-
-    void set_username(std::string username);
-    std::string get_username() const;
-
-    void set_socket(std::string socket);
-    std::string get_socket() const;
-
-    void set_port(int port);
-    int get_port() const;
-
-    std::string build_policy_msg();
-    ulong build_hash_code();
-
-    void set_using_socket(bool using_socket);
-    bool get_using_socket() const;
-};
-
-typedef SqlConnectionEntry sql_connection_entry;
-
 typedef void (*hook_handler_t)(TSRMLS_D);
 typedef void (*php_function)(INTERNAL_FUNCTION_PARAMETERS);
-typedef void (*init_connection_t)(INTERNAL_FUNCTION_PARAMETERS, sql_connection_entry *sql_connection_p);
 
 /**
  * 使用这个宏定义被 hook 函数的替换函数的函数头部
@@ -309,7 +267,7 @@ typedef void (*init_connection_t)(INTERNAL_FUNCTION_PARAMETERS, sql_connection_e
 
 ZEND_BEGIN_MODULE_GLOBALS(openrasp_hook)
 int check_type_white_bit_mask;
-openrasp::LRU<std::string, bool> *lru;
+openrasp::LRU<std::string, bool> lru;
 ZEND_END_MODULE_GLOBALS(openrasp_hook)
 
 ZEND_EXTERN_MODULE_GLOBALS(openrasp_hook);
@@ -332,21 +290,16 @@ void register_hook_handler(hook_handler_t hook_handler);
 const std::string get_check_type_name(OpenRASPCheckType check_type);
 
 void handle_block(TSRMLS_D);
-void check(OpenRASPCheckType check_type, zval *z_params TSRMLS_DC);
+void reset_response(TSRMLS_D);
 void openrasp_buildin_php_risk_handle(OpenRASPActionType action, OpenRASPCheckType type, int confidence,
                                       zval *params, zval *message TSRMLS_DC);
 
 bool openrasp_check_type_ignored(OpenRASPCheckType check_type TSRMLS_DC);
 bool openrasp_check_callable_black(const char *item_name, uint item_name_length TSRMLS_DC);
 bool openrasp_zval_in_request(zval *item TSRMLS_DC);
+std::string fetch_name_in_request(zval *item, std::string &var_type TSRMLS_DC);
 
 std::string openrasp_real_path(char *filename, int filename_len, bool use_include_path, uint32_t w_op TSRMLS_DC);
-
-void slow_query_alarm(int rows TSRMLS_DC);
-void plugin_sql_check(char *query, int query_len, char *server TSRMLS_DC);
-long fetch_rows_via_user_function(const char *f_name_str, zend_uint param_count, zval *params[] TSRMLS_DC);
-zend_bool check_database_connection_username(INTERNAL_FUNCTION_PARAMETERS, init_connection_t connection_init_func,
-                                             int enforce_policy);
 
 OpenRASPActionType string_to_action(std::string action_string);
 std::string action_to_string(OpenRASPActionType type);

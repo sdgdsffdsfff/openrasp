@@ -95,6 +95,14 @@ PHP_RINIT_FUNCTION(openrasp_inject)
         header.response_code = 0;
         sapi_header_op(SAPI_HEADER_REPLACE, &header TSRMLS_CC);
     }
+    for (const auto &it : OPENRASP_CONFIG(inject.headers))
+    {
+        sapi_header_line header;
+        header.line = const_cast<char *>(it.c_str());
+        header.line_len = it.length();
+        header.response_code = 0;
+        sapi_header_op(SAPI_HEADER_REPLACE, &header TSRMLS_CC);
+    }
     return SUCCESS;
 }
 PHP_RSHUTDOWN_FUNCTION(openrasp_inject)
@@ -120,21 +128,13 @@ PHP_RSHUTDOWN_FUNCTION(openrasp_inject)
         }
         if (is_match_inject_prefix)
         {
-            char target_header[] = "text/html";
-            for (zend_llist_element *element = SG(sapi_headers).headers.head; element; element = element->next)
+            if (strncasecmp(SG(sapi_headers).mimetype, "text/html", sizeof("text/html") - 1) == 0)
             {
-                sapi_header_struct *sapi_header = (sapi_header_struct *)element->data;
-                if (sapi_header->header_len > 0 &&
-                    strncasecmp(sapi_header->header, "content-type", sizeof("content-type") - 1) == 0 &&
-                    php_stristr(sapi_header->header, target_header, sapi_header->header_len, strlen(target_header)) != nullptr)
-                {
 #if PHP_MINOR_VERSION > 3
-                    php_output_write(inject_html.data(), inject_html.size() TSRMLS_CC);
+                php_output_write(inject_html.data(), inject_html.size() TSRMLS_CC);
 #else
-                    php_body_write(inject_html.data(), inject_html.size() TSRMLS_CC);
+                php_body_write(inject_html.data(), inject_html.size() TSRMLS_CC);
 #endif
-                    break;
-                }
             }
         }
     }

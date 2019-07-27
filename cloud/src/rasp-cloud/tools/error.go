@@ -17,7 +17,6 @@ package tools
 import (
 	"github.com/astaxie/beego/logs"
 	"strconv"
-	"log"
 	"os"
 )
 
@@ -32,6 +31,7 @@ const (
 	ErrCodeResetUserFailed
 	ErrCodeInitDefaultAppFailed
 	ErrCodeInitChildProcessFailed
+	ErrCodeChDirFailed
 )
 
 func Panic(errCode int, message string, err error) {
@@ -41,13 +41,4 @@ func Panic(errCode int, message string, err error) {
 	}
 	logs.Error(message)
 	os.Exit(errCode)
-}
-
-func Fatal(errCode int, message string, err error) {
-	message = "[" + strconv.Itoa(errCode) + "] " + message
-	if err != nil {
-		message = message + ": " + err.Error()
-	}
-	logs.Error(message)
-	log.Fatal()
 }

@@ -20,7 +20,11 @@ import com.baidu.openrasp.config.Config;
 import com.baidu.openrasp.tool.Reflection;
 import com.baidu.openrasp.tool.model.ApplicationModel;
 
-import java.util.*;
+import java.net.URL;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -79,6 +83,16 @@ public final class HttpServletRequest extends AbstractRequest {
     @Override
     public String getAuthType() {
         return Reflection.invokeStringMethod(request, "getAuthType", EMPTY_CLASS);
+    }
+
+    /**
+     * (none-javadoc)
+     *
+     * @see AbstractRequest#getContentType()
+     */
+    @Override
+    public String getContentType() {
+        return Reflection.invokeStringMethod(request, "getContentType", EMPTY_CLASS);
     }
 
     /**
@@ -170,15 +184,11 @@ public final class HttpServletRequest extends AbstractRequest {
      */
     @Override
     public Map<String, String[]> getParameterMap() {
-        Map<String, String[]> normalMap = new HashMap<String, String[]>();
-        if (!canGetParameter) {
-            if (!setCharacterEncodingFromConfig()) {
-                normalMap = EMPTY_PARAM;
-            }
-        } else {
+        Map<String, String[]> normalMap = null;
+        if (canGetParameter || setCharacterEncodingFromConfig()) {
             normalMap = (Map<String, String[]>) Reflection.invokeMethod(request, "getParameterMap", EMPTY_CLASS);
         }
-        return getMergeMap(normalMap,fileUploadCache);
+        return getMergeMap(normalMap, fileUploadCache);
     }
 
     /**
@@ -247,12 +257,26 @@ public final class HttpServletRequest extends AbstractRequest {
     @Override
     public String getAppBasePath() {
         try {
-            String realPath = Reflection.invokeStringMethod(request, "getRealPath", new Class[]{String.class}, "/");
+            String realPath;
+            if ("weblogic".equals(ApplicationModel.getServerName())) {
+                realPath = getRealPathForWeblogic();
+            } else {
+                realPath = Reflection.invokeStringMethod(request, "getRealPath", new Class[]{String.class}, "/");
+            }
             return realPath == null ? "" : realPath;
         } catch (Exception e) {
-            e.printStackTrace();
             return "";
         }
+    }
+
+    /**
+     * (none-javadoc)
+     *
+     * @see AbstractRequest#getCharacterEncoding()
+     */
+    @Override
+    public String getCharacterEncoding() {
+        return Reflection.invokeStringMethod(request, "getCharacterEncoding", EMPTY_CLASS);
     }
 
     @Override
@@ -263,11 +287,14 @@ public final class HttpServletRequest extends AbstractRequest {
     }
 
     private Map<String, String[]> getMergeMap(Map<String, String[]> map1, Map<String, String[]> map2) {
+        if (map1 == null && map2 == null) {
+            return null;
+        }
         Map<String, String[]> result = new HashMap<String, String[]>();
-        if (!map1.isEmpty()) {
+        if (map1 != null && !map1.isEmpty()) {
             mergeMap(map1, result);
         }
-        if (!map2.isEmpty()) {
+        if (map2 != null && !map2.isEmpty()) {
             mergeMap(map2, result);
         }
         return result;
@@ -289,5 +316,14 @@ public final class HttpServletRequest extends AbstractRequest {
         s1 = Arrays.copyOf(s1, str1Length + str2length);
         System.arraycopy(s2, 0, s1, str1Length, str2length);
         return s1;
+    }
+
+    private String getRealPathForWeblogic() {
+        Object servletContext = Reflection.invokeMethod(request, "getContext", new Class[]{});
+        URL url = (URL) Reflection.invokeMethod(servletContext, "getResource", new Class[]{String.class}, "/");
+        if (url != null) {
+            return url.getPath();
+        }
+        return null;
     }
 }

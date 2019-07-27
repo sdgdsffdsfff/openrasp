@@ -18,7 +18,7 @@
             </a>
             <div class="dropdown-menu dropdown-menu-left dropdown-menu-arrow">
               <div class="form-group" style="margin: 6px 15px 10px 15px; ">
-                <input type="text" class="form-control form-control-sm" v-model="keyword">
+                <input v-model.trim="keyword" type="text" class="form-control form-control-sm">
               </div>
               <div style="max-height: 300px; overflow: scroll; ">
                 <a v-for="row in app_list_filtered" :key="row.id" class="dropdown-item" href="javascript:" @click.prevent="setCurrentApp(row)">
@@ -55,6 +55,14 @@
                   <i class="dropdown-icon fe fe-settings"></i> 用户设置
                 </a>
                 <div class="dropdown-divider"></div> -->
+                <RouterLink class="dropdown-item" :to="{ name: 'audit', params: { app_id: current_app.id } }">
+                  <i class="dropdown-icon fe fe-user-check" />
+                  操作审计
+                </RouterLink>
+                <a class="dropdown-item" href="https://rasp.baidu.com/#section-support" target="_blank">
+                  <i class="dropdown-icon fa fa-qq" /> 技术支持
+                </a>
+                <div class="dropdown-divider"/>
                 <a class="dropdown-item" href="javascript:" @click="doLogout()">
                   <i class="dropdown-icon fe fe-log-out" /> 退出登录
                 </a>
@@ -76,6 +84,12 @@
                 <RouterLink :to="{ name: 'dashboard', params: { app_id: current_app.id } }" class="nav-link">
                   <i class="fe fe-home" />
                   安全总览
+                </RouterLink>
+              </li>
+              <li class="nav-item">
+                <RouterLink :to="{ name: 'vulns', params: { app_id: current_app.id } }" class="nav-link">
+                  <i class="fe fe-eye" />
+                  漏洞列表
                 </RouterLink>
               </li>
               <li class="nav-item">
@@ -103,13 +117,13 @@
                 </RouterLink>
               </li>
               <li class="nav-item">
-                <RouterLink :to="{ name: 'audit', params: { app_id: current_app.id } }" class="nav-link">
-                  <i class="fe fe-user-check" />
-                  操作审计
+                <RouterLink :to="{ name: 'exceptions', params: { app_id: current_app.id } }" class="nav-link">
+                  <i class="fe fe-alert-circle" />
+                  异常日志
                 </RouterLink>
               </li>
               <li class="nav-item dropdown">
-                <RouterLink :to="{ name: 'settings', params: { app_id: current_app.id } }" class="nav-link">
+                <RouterLink :to="{ name: 'settings', params: { setting_tab: 'general', app_id: current_app.id } }" class="nav-link">
                   <i class="fe fe-settings" />
                   系统设置
                 </RouterLink>
@@ -120,15 +134,31 @@
                   帮助文档
                 </a>
               </li>
-              <li class="nav-item">
+              <!-- <li class="nav-item">
                 <a href="https://rasp.baidu.com/#section-support" target="_blank" class="nav-link">
                   <i class="fa fa-qq" />
                   技术支持
                 </a>
-              </li>
+              </li> -->
             </ul>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div v-if="no_plugin" class="alert alert-warning">
+      <div class="container">
+        <strong>注意!</strong> 当前应用没有配置任何检测插件，请前往 <router-link :to="{name: 'plugins'}">
+插件页面
+</router-link> 进行配置
+      </div>
+    </div>
+
+    <div v-if="all_log" class="alert alert-warning">
+      <div class="container">
+        当前以「记录日志」模式运行，可前往 <router-link :to="{name: 'settings', params: {setting_tab: 'algorithm'}}">
+防护设置
+</router-link> 关闭
       </div>
     </div>
 
@@ -147,20 +177,30 @@ export default {
   },
   data: function() {
     return {
-      keyword: ''
+      keyword: '',
+      no_plugin: false,
+      all_log: false
     }
   },
   computed: {
-    ...mapGetters(['current_app', 'app_list']),
+    ...mapGetters(['current_app', 'app_list', 'sticky']),
     app_list_filtered: function() {
       var keyword = this.keyword.toLowerCase()
-      return this.app_list.filter(function (app) {
+      return this.app_list.filter(function(app) {
         return app.name.toLowerCase().indexOf(keyword) != -1
       })
     }
   },
   watch: {
     current_app(app) {
+      this.no_plugin = !this.current_app.selected_plugin_id || !this.current_app.selected_plugin_id.length
+      this.all_log = false
+
+      // 检查是否开启日志模式
+      if (!this.no_plugin) {
+        this.all_log = this.current_app.algorithm_config.meta.all_log
+      }
+
       this.$router.push({
         name: this.$route.name,
         params: {
@@ -172,6 +212,7 @@ export default {
   methods: {
     ...mapActions(['loadAppList']),
     ...mapMutations(['setCurrentApp']),
+    ...mapMutations(['setSticky']),
     showAddHostModal() {
       this.$refs.addHost.showModal()
     },
@@ -182,6 +223,21 @@ export default {
           location.href = '/#/login'
         })
     }
+  },
+  mounted: function() {
+    this.request.post('v1/api/server/url/get', {}).then(res => {
+      if (!res.panel_url) {
+        console.log('panel_url not set, initializing')
+        var current_url = location.href.split(/\?|#/)[0]
+
+        this.request.post('v1/api/server/url', {
+          panel_url: current_url,
+          agent_urls: [current_url]
+        }).then(res => {})
+      } else {
+        console.log('panel_url already configured')
+      }
+    })
   }
 }
 </script>

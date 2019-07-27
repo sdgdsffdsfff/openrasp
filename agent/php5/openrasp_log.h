@@ -18,6 +18,8 @@
 #define OPENRASP_LOG_H
 
 #include "openrasp.h"
+#include "agent/shared_log_manager.h"
+#include <map>
 
 #ifdef __cplusplus
 extern "C"
@@ -43,6 +45,8 @@ extern "C"
 #define PLUGIN_LOG_DIR_NAME "plugin"
 #define RASP_LOG_DIR_NAME "rasp"
 
+extern std::unique_ptr<openrasp::SharedLogManager> slm;
+
 typedef enum log_appender_t
 {
     NULL_APPENDER = 0,
@@ -63,9 +67,14 @@ typedef enum logger_instance_t
 //reference https://en.wikipedia.org/wiki/Syslog
 typedef enum severity_level_t
 {
+    LEVEL_EMERG = 0,
+    LEVEL_ALERT = 1,
+    LEVEL_CRIT = 2,
+    LEVEL_ERR = 3,
+    LEVEL_WARNING = 4,
+    LEVEL_NOTICE = 5,
     LEVEL_INFO = 6,
-    LEVEL_DEBUG = 7,
-    LEVEL_ALL = 8
+    LEVEL_DEBUG = 7
 } severity_level;
 
 class RaspLoggerEntry
@@ -118,6 +127,10 @@ class RaspLoggerEntry
     char *get_formatted_date_suffix() const;
     zval *get_common_info(TSRMLS_D) const;
     void set_level(severity_level level);
+
+    static std::string level_to_name(severity_level level);
+    static int name_to_level(const std::string &name);
+    static void inner_error(int type, openrasp_error_code code, const char *format, ...);
 };
 
 typedef RaspLoggerEntry rasp_logger_entry;
@@ -161,6 +174,10 @@ PHP_MSHUTDOWN_FUNCTION(openrasp_log);
 PHP_RINIT_FUNCTION(openrasp_log);
 PHP_RSHUTDOWN_FUNCTION(openrasp_log);
 PHP_MINFO_FUNCTION(openrasp_log);
+
+bool log_module_initialized();
+void update_log_level();
+std::map<std::string, std::string> get_if_addr_map();
 
 #endif /* OPENRASP_LOG_H */
 

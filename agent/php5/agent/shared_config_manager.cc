@@ -18,6 +18,7 @@
 #include "shared_config_block.h"
 #include "utils/digest.h"
 #include "utils/net.h"
+#include <algorithm>
 
 namespace openrasp
 {
@@ -81,37 +82,29 @@ bool SharedConfigManager::build_check_type_white_array(std::map<std::string, int
     }
     DoubleArrayTrie dat;
     dat.build(urls.size(), &urls, 0, &values);
-    write_check_type_white_array_to_shm(dat.array(), dat.total_size());
+    return write_check_type_white_array_to_shm(dat.array(), dat.total_size());
 }
 
-bool SharedConfigManager::build_check_type_white_array(OpenraspConfig &openrasp_config)
+bool SharedConfigManager::build_check_type_white_array(std::map<std::string, std::vector<std::string>> &url_type_map)
 {
-    std::map<std::string, int> url_mask_map;
-    bool all_type_white = openrasp_config.Get("hook.white.ALL", false);
-    if (all_type_white)
+    std::map<std::string, int> white_mask_map;
+    for (auto &white_item : url_type_map)
     {
-        url_mask_map[""] = (1 << ALL_TYPE) - 1;
-    }
-    else
-    {
-        for (auto name : check_type_transfer->get_all_names())
+        int bit_mask = 0;
+        if (std::find(white_item.second.begin(), white_item.second.end(), "all") != white_item.second.end())
         {
-            std::vector<std::string> urls;
-            urls = openrasp_config.GetArray("hook.white." + name, urls);
-            for (auto vector_iter : urls)
+            bit_mask = (1 << ALL_TYPE) - 1;
+        }
+        else
+        {
+            for (auto &type_name : white_item.second)
             {
-                std::string target_url = (vector_iter == "all") ? "" : vector_iter;
-                int mask = (1 << check_type_transfer->name_to_type(name));
-                auto it = url_mask_map.find(target_url);
-                if (it != url_mask_map.end())
-                {
-                    mask |= it->second;
-                }
-                url_mask_map[target_url] = mask;
+                bit_mask |= (1 << check_type_transfer->name_to_type(type_name));
             }
         }
+        white_mask_map.insert({(white_item.first == "*") ? "" : white_item.first, bit_mask});
     }
-    build_check_type_white_array(url_mask_map);
+    return build_check_type_white_array(white_mask_map);
 }
 
 long SharedConfigManager::get_config_last_update()
@@ -242,10 +235,12 @@ bool SharedConfigManager::build_hostname()
     if (!gethostname(host_name, sizeof(host_name) - 1))
     {
         hostname = std::string(host_name);
+        return true;
     }
     else
     {
-        openrasp_error(E_WARNING, AGENT_ERROR, _("gethostname error: %s"), strerror(errno));
+        openrasp_error(LEVEL_WARNING, RUNTIME_ERROR, _("gethostname error: %s"), strerror(errno));
+        return false;
     }
 }
 

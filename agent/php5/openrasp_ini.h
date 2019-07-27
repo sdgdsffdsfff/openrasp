@@ -20,12 +20,8 @@
 #include <string>
 #include <unordered_set>
 
-ZEND_INI_MH(OnUpdateOpenraspDoubleGEZero);
-ZEND_INI_MH(OnUpdateOpenraspIntGEZero);
-ZEND_INI_MH(OnUpdateOpenraspIntGZero);
 ZEND_INI_MH(OnUpdateOpenraspCString);
 ZEND_INI_MH(OnUpdateOpenraspBool);
-ZEND_INI_MH(OnUpdateOpenraspSet);
 ZEND_INI_MH(OnUpdateOpenraspHeartbeatInterval);
 
 class Openrasp_ini
@@ -33,7 +29,7 @@ class Openrasp_ini
 public:
   char *root_dir;
   char *locale;
-  unsigned int heartbeat_interval = 180;
+  unsigned int heartbeat_interval = 90;
   char *backend_url;
   char *app_id;
   char *app_secret;
